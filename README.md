@@ -1,3 +1,4 @@
+# [Live Site](https://attilaberencsi.github.io/search)
 # Search, Visually: a developer quick guide
 
 A single static page that explains how search works, from `grep` and inverted indexes through BM25, fuzzy search, similarity search, vector embeddings, ANN indexes, hybrid search and re-ranking, to RAG and GraphRAG.
@@ -22,13 +23,6 @@ assets/app.js     theme toggle, scroll-spy, demos (optional; the page works with
 ```
 
 There's no build step and no dependencies. The page uses only Google Fonts, and falls back to system fonts if those can't load.
-
-## Deploy to GitHub Pages
-
-1. Push these files to the root of a GitHub repository (e.g. `main` branch).
-2. In the repository, go to **Settings → Pages**.
-3. Under **Build and deployment**, choose **Source: Deploy from a branch**, then **Branch: `main` / `(root)`**, and click **Save**.
-4. After about a minute the site is live at `https://<user>.github.io/<repo>/`.
 
 All links are relative, so the page works under the `/<repo>/` sub-path.
 
