@@ -1,0 +1,1298 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Search, Visually Explained</title>
+<meta name="description" content="A visual quick guide for developers to how search works, from grep and inverted indexes to BM25, vector embeddings, hybrid search, RAG and GraphRAG. For each technique it shows how documents are indexed and how queries are run and ranked, step by step.">
+<meta name="theme-color" content="#4f46e5">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Ccircle cx='10' cy='10' r='6.5' fill='none' stroke='%234f46e5' stroke-width='2.6'/%3E%3Cpath d='m15 15 6 6' stroke='%234f46e5' stroke-width='2.6' stroke-linecap='round'/%3E%3C/svg%3E">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="assets/style.css">
+<script>try{var t=localStorage.getItem("sg-theme");if(t==="light"||t==="dark")document.documentElement.setAttribute("data-theme",t);}catch(e){}</script>
+</head>
+<body>
+
+<!-- ======================= SVG sprite & shared markers ======================= -->
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <defs>
+    <marker id="ah" viewBox="0 0 10 10" refX="8.5" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="mk" d="M0 0 10 5 0 10z"/></marker>
+    <marker id="ah-idx" viewBox="0 0 10 10" refX="8.5" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="mk idx" d="M0 0 10 5 0 10z"/></marker>
+    <marker id="ah-qry" viewBox="0 0 10 10" refX="8.5" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="mk qry" d="M0 0 10 5 0 10z"/></marker>
+    <marker id="ah-gen" viewBox="0 0 10 10" refX="8.5" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="mk gen" d="M0 0 10 5 0 10z"/></marker>
+    <marker id="ah-rank" viewBox="0 0 10 10" refX="8.5" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="mk rank" d="M0 0 10 5 0 10z"/></marker>
+    <marker id="ah-acc" viewBox="0 0 10 10" refX="8.5" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="mk acc" d="M0 0 10 5 0 10z"/></marker>
+  </defs>
+  <symbol id="i-db" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><ellipse cx="12" cy="5.5" rx="8" ry="3"/><path d="M4 5.5v13c0 1.7 3.6 3 8 3s8-1.3 8-3v-13M4 12c0 1.7 3.6 3 8 3s8-1.3 8-3"/></g></symbol>
+  <symbol id="i-search" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><circle cx="10.5" cy="10.5" r="6.5"/><path d="m15.5 15.5 5 5"/></g></symbol>
+  <symbol id="i-rank" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M5 20V11M12 20V5M19 20v-6"/></g></symbol>
+  <symbol id="i-spark" viewBox="0 0 24 24"><path fill="currentColor" d="M12 2.5l2.1 6.4 6.4 2.1-6.4 2.1L12 19.5l-2.1-6.4L3.5 11l6.4-2.1z"/></symbol>
+  <symbol id="i-graph" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="5" cy="6" r="2.5"/><circle cx="19" cy="6" r="2.5"/><circle cx="12" cy="18" r="2.5"/><path d="M7.3 7.2 10.6 16M16.7 7.2 13.4 16M7.5 6h9"/></g></symbol>
+  <symbol id="i-info" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><path d="M12 11v6M12 7.5v.5"/></g></symbol>
+  <symbol id="i-play" viewBox="0 0 24 24"><path fill="currentColor" d="M7 4.5v15l12-7.5z"/></symbol>
+  <symbol id="i-theme" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="8.5"/><path fill="currentColor" stroke="none" d="M12 3.5a8.5 8.5 0 0 1 0 17z"/></g></symbol>
+  <symbol id="i-menu" viewBox="0 0 24 24"><path d="M4 7h16M4 12h16M4 17h10" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/></symbol>
+  <symbol id="i-up" viewBox="0 0 24 24"><path d="M12 19V5M6 11l6-6 6 6" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+</svg>
+
+<!-- ======================= Top bar ======================= -->
+<header class="topbar">
+  <div class="wrap">
+    <a class="brand" href="#top"><svg><use href="#i-search"/></svg><span>Search, Visually</span></a>
+    <div class="crumb" id="crumb">A visual quick guide for developers</div>
+    <button class="iconbtn" id="themeBtn" type="button" aria-label="Toggle light/dark theme"><svg><use href="#i-theme"/></svg></button>
+    <button class="iconbtn" id="navBtn" type="button" aria-expanded="false" aria-controls="drawer"><svg><use href="#i-menu"/></svg><span>Contents</span></button>
+  </div>
+  <div class="progress" id="progress"></div>
+</header>
+
+<nav class="drawer" id="drawer" aria-label="Chapters">
+  <div class="grp">I · Keyword era</div>
+  <ol>
+    <li><a href="#foundations"><span class="n">00</span>Foundations &amp; terminology</a></li>
+    <li><a href="#exact"><span class="n">01</span>Exact match &amp; pattern search</a></li>
+    <li><a href="#boolean"><span class="n">02</span>Boolean search &amp; the inverted index</a></li>
+    <li><a href="#lexical"><span class="n">03</span>Lexical (full-text) search</a></li>
+    <li><a href="#phrase"><span class="n">04</span>Phrase &amp; proximity search</a></li>
+    <li><a href="#fuzzy"><span class="n">05</span>Fuzzy search</a></li>
+  </ol>
+  <div class="grp">II · Relevance ranking</div>
+  <ol>
+    <li><a href="#bm25"><span class="n">06</span>TF-IDF → BM25</a></li>
+    <li><a href="#similarity"><span class="n">07</span>Similarity search</a></li>
+  </ol>
+  <div class="grp">III · Vector &amp; neural</div>
+  <ol>
+    <li><a href="#embeddings"><span class="n">08</span>Vector embeddings</a></li>
+    <li><a href="#ann"><span class="n">09</span>Vector search &amp; ANN indexes</a></li>
+    <li><a href="#sparse"><span class="n">10</span>Learned sparse retrieval</a></li>
+    <li><a href="#hybrid"><span class="n">11</span>Hybrid search</a></li>
+    <li><a href="#rerank"><span class="n">12</span>Re-ranking</a></li>
+  </ol>
+  <div class="grp">IV · Generative retrieval</div>
+  <ol>
+    <li><a href="#rag"><span class="n">13</span>RAG</a></li>
+    <li><a href="#advanced-rag"><span class="n">14</span>Advanced RAG patterns</a></li>
+    <li><a href="#graphrag"><span class="n">15</span>GraphRAG</a></li>
+    <li><a href="#evaluation"><span class="n">16</span>Evaluating search</a></li>
+    <li><a href="#cheatsheet"><span class="n">17</span>Cheat sheet &amp; glossary</a></li>
+  </ol>
+</nav>
+
+<main class="wrap" id="top">
+
+<!-- ======================= Hero ======================= -->
+<section class="hero">
+  <div class="eyebrow">Developer quick guide</div>
+  <h1>How search works, from <code style="font-size:.8em">grep</code> to GraphRAG</h1>
+  <p class="lead">This guide covers 18 short chapters, ordered from the oldest and most common techniques to the newest and most complex. Each technique <b>builds on</b> or <b>combines with</b> the ones before it. For every technique you'll see the same two things: how documents are <b>transformed and stored</b>, and how a query is <b>run and ranked</b>, step by step.</p>
+  <div class="legend">
+    <span><i style="background:var(--idx)"></i>Index time: transform &amp; store</span>
+    <span><i style="background:var(--qry)"></i>Query time: match &amp; retrieve</span>
+    <span><i style="background:var(--rank)"></i>Scoring &amp; ranking</span>
+    <span><i style="background:var(--gen)"></i>LLM / generation</span>
+    <span><i style="background:var(--graph)"></i>Knowledge graph</span>
+  </div>
+</section>
+
+<!-- ======================= ToC ======================= -->
+<nav class="toc" aria-label="Table of contents">
+  <h2>Table of contents</h2>
+  <div class="toc-groups">
+    <div class="toc-group" style="--c:var(--idx)">
+      <h3>I · Keyword era <small>1960s→</small></h3>
+      <ol>
+        <li><a href="#foundations"><span class="n">00</span>Foundations &amp; terminology</a></li>
+        <li><a href="#exact"><span class="n">01</span>Exact match &amp; pattern</a></li>
+        <li><a href="#boolean"><span class="n">02</span>Boolean &amp; inverted index</a></li>
+        <li><a href="#lexical"><span class="n">03</span>Lexical (full-text) search</a></li>
+        <li><a href="#phrase"><span class="n">04</span>Phrase &amp; proximity</a></li>
+        <li><a href="#fuzzy"><span class="n">05</span>Fuzzy search</a></li>
+      </ol>
+    </div>
+    <div class="toc-group" style="--c:var(--rank)">
+      <h3>II · Relevance ranking <small>1970s→</small></h3>
+      <ol>
+        <li><a href="#bm25"><span class="n">06</span>TF-IDF → BM25</a></li>
+        <li><a href="#similarity"><span class="n">07</span>Similarity search</a></li>
+      </ol>
+    </div>
+    <div class="toc-group" style="--c:var(--qry)">
+      <h3>III · Vector &amp; neural <small>2013→</small></h3>
+      <ol>
+        <li><a href="#embeddings"><span class="n">08</span>Vector embeddings</a></li>
+        <li><a href="#ann"><span class="n">09</span>Vector search &amp; ANN</a></li>
+        <li><a href="#sparse"><span class="n">10</span>Learned sparse (SPLADE)</a></li>
+        <li><a href="#hybrid"><span class="n">11</span>Hybrid search</a></li>
+        <li><a href="#rerank"><span class="n">12</span>Re-ranking</a></li>
+      </ol>
+    </div>
+    <div class="toc-group" style="--c:var(--gen)">
+      <h3>IV · Generative <small>2020→</small></h3>
+      <ol>
+        <li><a href="#rag"><span class="n">13</span>RAG</a></li>
+        <li><a href="#advanced-rag"><span class="n">14</span>Advanced RAG patterns</a></li>
+        <li><a href="#graphrag"><span class="n">15</span>GraphRAG</a></li>
+        <li><a href="#evaluation"><span class="n">16</span>Evaluating search</a></li>
+        <li><a href="#cheatsheet"><span class="n">17</span>Cheat sheet &amp; glossary</a></li>
+      </ol>
+    </div>
+  </div>
+</nav>
+
+<!-- ======================= Evolution map ======================= -->
+<figure class="diagram" aria-label="Evolution of search techniques">
+  <svg viewBox="0 0 1220 300" role="img" aria-labelledby="evo-t">
+    <title id="evo-t">Search evolution: how each technique builds on the previous ones</title>
+    <!-- bands -->
+    <rect x="0" y="22" width="1220" height="62" rx="10" class="d-box2" opacity=".55"/>
+    <rect x="0" y="92" width="1220" height="62" rx="10" class="d-box2" opacity=".55"/>
+    <rect x="0" y="162" width="1220" height="62" rx="10" class="d-box2" opacity=".55"/>
+    <rect x="0" y="232" width="1220" height="62" rx="10" class="d-box2" opacity=".55"/>
+    <text class="th f-idx" x="16" y="58">I · Keyword</text>
+    <text class="th f-rank" x="16" y="128">II · Ranking</text>
+    <text class="th f-qry" x="16" y="198">III · Vector</text>
+    <text class="th f-gen" x="16" y="268">IV · Generative</text>
+    <!-- arrows (drawn first) -->
+    <path class="d-arrow" d="M250 53H278"/>
+    <path class="d-arrow" d="M400 53H428"/>
+    <path class="d-arrow" d="M190 73C190 123 300 123 356 123"/>
+    <path class="d-arrow" d="M480 123H528"/>
+    <path class="d-arrow" d="M490 73C490 93 590 83 590 99"/>
+    <path class="d-arrow dash" d="M420 143C420 193 560 193 626 193"/>
+    <text class="ts" x="440" y="214">text → vectors</text>
+    <path class="d-arrow" d="M750 193H778"/>
+    <path class="d-arrow" d="M900 193H928"/>
+    <path class="d-arrow" d="M650 123C900 123 990 128 990 169"/>
+    <text class="ts" x="760" y="117">keyword half of hybrid</text>
+    <path class="d-arrow gen" d="M990 213V239"/>
+    <path class="d-arrow gen" d="M1050 263H1078"/>
+    <!-- nodes -->
+    <g><rect class="d-idx" x="130" y="33" width="120" height="40" rx="10"/><text class="t" x="190" y="50" text-anchor="middle">Inverted index</text><text class="tms" x="190" y="65" text-anchor="middle">Boolean · 1960s</text></g>
+    <g><rect class="d-idx" x="280" y="33" width="120" height="40" rx="10"/><text class="t" x="340" y="50" text-anchor="middle">Edit distance</text><text class="tms" x="340" y="65" text-anchor="middle">fuzzy · 1965</text></g>
+    <g><rect class="d-idx" x="430" y="33" width="120" height="40" rx="10"/><text class="t" x="490" y="50" text-anchor="middle">Stemming</text><text class="tms" x="490" y="65" text-anchor="middle">Porter · 1980</text></g>
+    <g><rect class="d-rank" x="360" y="103" width="120" height="40" rx="10"/><text class="t" x="420" y="120" text-anchor="middle">TF-IDF / VSM</text><text class="tms" x="420" y="135" text-anchor="middle">1972–75</text></g>
+    <g><rect class="d-rank" x="530" y="103" width="120" height="40" rx="10"/><text class="t" x="590" y="120" text-anchor="middle">BM25</text><text class="tms" x="590" y="135" text-anchor="middle">Okapi · 1994</text></g>
+    <g><rect class="d-qry" x="630" y="173" width="120" height="40" rx="10"/><text class="t" x="690" y="190" text-anchor="middle">word2vec</text><text class="tms" x="690" y="205" text-anchor="middle">2013</text></g>
+    <g><rect class="d-qry" x="780" y="173" width="120" height="40" rx="10"/><text class="t" x="840" y="190" text-anchor="middle">BERT + HNSW</text><text class="tms" x="840" y="205" text-anchor="middle">dense · 2016–18</text></g>
+    <g><rect class="d-qry" x="930" y="173" width="120" height="40" rx="10"/><text class="t" x="990" y="190" text-anchor="middle">Hybrid+rerank</text><text class="tms" x="990" y="205" text-anchor="middle">2020s</text></g>
+    <g><rect class="d-gen" x="930" y="243" width="120" height="40" rx="10"/><text class="t" x="990" y="260" text-anchor="middle">RAG</text><text class="tms" x="990" y="275" text-anchor="middle">2020</text></g>
+    <g><rect class="d-graph" x="1080" y="243" width="120" height="40" rx="10"/><text class="t" x="1140" y="260" text-anchor="middle">GraphRAG</text><text class="tms" x="1140" y="275" text-anchor="middle">2024</text></g>
+  </svg>
+  <figcaption>The search family tree. Nothing gets replaced: modern stacks still run an inverted index and BM25 next to vectors and LLMs.</figcaption>
+</figure>
+
+<!-- =============================================================== -->
+<div class="part-title" style="--c:var(--idx)">Part I · Keyword era</div>
+
+<!-- 00 Foundations -->
+<section class="chapter" id="foundations" style="--c:var(--idx)">
+  <div class="ch-head">
+    <div class="ch-num">00</div>
+    <h2>Foundations &amp; terminology</h2>
+    <p class="purpose"><b>Purpose:</b> the mental model that every later chapter reuses. Search has two halves: <b>index time</b> prepares the data, and <b>query time</b> finds and ranks it.</p>
+  </div>
+
+  <figure class="diagram">
+    <svg viewBox="0 0 900 250" role="img" aria-label="Generic search architecture: index time and query time meet at the index">
+      <text class="th f-idx" x="10" y="22">Index time (offline, once per document)</text>
+      <text class="th f-qry" x="10" y="238">Query time (online, per request, in milliseconds)</text>
+      <rect class="d-box" x="10" y="40" width="130" height="50" rx="10"/><text class="t" x="75" y="62" text-anchor="middle">Documents</text><text class="ts" x="75" y="78" text-anchor="middle">raw text, PDFs, rows</text>
+      <rect class="d-idx" x="190" y="40" width="150" height="50" rx="10"/><text class="t" x="265" y="62" text-anchor="middle">Transform</text><text class="ts" x="265" y="78" text-anchor="middle">parse · analyze · embed</text>
+      <rect class="d-idx" x="390" y="40" width="130" height="50" rx="10"/><text class="t" x="455" y="62" text-anchor="middle">Store</text><text class="ts" x="455" y="78" text-anchor="middle">write index structure</text>
+      <rect class="d-acc" x="570" y="80" width="150" height="90" rx="12"/><text class="t" x="645" y="118" text-anchor="middle">INDEX</text><text class="ts" x="645" y="136" text-anchor="middle">inverted · vector · graph</text>
+      <rect class="d-box" x="10" y="160" width="130" height="50" rx="10"/><text class="t" x="75" y="182" text-anchor="middle">Query</text><text class="ts" x="75" y="198" text-anchor="middle">user's words / question</text>
+      <rect class="d-qry" x="190" y="160" width="150" height="50" rx="10"/><text class="t" x="265" y="182" text-anchor="middle">Transform</text><text class="ts" x="265" y="198" text-anchor="middle">same analyzer / model!</text>
+      <rect class="d-qry" x="390" y="160" width="130" height="50" rx="10"/><text class="t" x="455" y="182" text-anchor="middle">Match</text><text class="ts" x="455" y="198" text-anchor="middle">find candidates</text>
+      <rect class="d-rank" x="770" y="100" width="120" height="50" rx="10"/><text class="t" x="830" y="122" text-anchor="middle">Score &amp; rank</text><text class="ts" x="830" y="138" text-anchor="middle">→ top-k results</text>
+      <path class="d-arrow idx" d="M140 65H186"/><path class="d-arrow idx" d="M340 65H386"/>
+      <path class="d-arrow idx" d="M520 65C550 65 560 90 566 98"/>
+      <path class="d-arrow qry" d="M140 185H186"/><path class="d-arrow qry" d="M340 185H386"/>
+      <path class="d-arrow qry" d="M520 185C550 185 560 160 566 152"/>
+      <path class="d-arrow rank" d="M720 125H766"/>
+    </svg>
+    <figcaption>The golden rule: <b>queries must be transformed the same way as documents</b>, otherwise they won't match.</figcaption>
+  </figure>
+
+  <div class="grid2">
+    <figure class="diagram small">
+      <svg viewBox="0 0 420 220" role="img" aria-label="Precision and recall Venn diagram">
+        <circle class="c-idx" cx="160" cy="105" r="80"/>
+        <circle class="c-qry" cx="260" cy="105" r="80"/>
+        <text class="t f-idx" x="110" y="105" text-anchor="middle">Relevant</text>
+        <text class="t f-qry" x="310" y="105" text-anchor="middle">Retrieved</text>
+        <text class="t" x="210" y="100" text-anchor="middle">hits</text>
+        <text class="ts" x="210" y="116" text-anchor="middle">true positives</text>
+        <text class="ts" x="110" y="122" text-anchor="middle">missed</text>
+        <text class="ts" x="310" y="122" text-anchor="middle">noise</text>
+        <text class="tm" x="210" y="205" text-anchor="middle">Precision = hits / retrieved · Recall = hits / relevant</text>
+      </svg>
+      <figcaption>Precision: "is what I got good?" Recall: "did I get everything?"</figcaption>
+    </figure>
+    <div class="example" style="margin:0">
+      <h4>Core vocabulary</h4>
+      <div class="steps">
+        <div class="row"><span>Corpus</span><span>The whole collection of <b>documents</b> you search over.</span></div>
+        <div class="row"><span>Token / term</span><span>A unit of text after splitting and normalization. A term is a token stored in the index.</span></div>
+        <div class="row"><span>Analyzer</span><span>The pipeline that turns text into terms: tokenizer + filters.</span></div>
+        <div class="row"><span>Index</span><span>A data structure that answers "which docs contain X?" without scanning everything.</span></div>
+        <div class="row"><span>Relevance</span><span>How well a document satisfies the <b>intent</b> of the query, not just its words.</span></div>
+        <div class="row"><span>Top-k</span><span>Only the best <i>k</i> results are returned and fully scored.</span></div>
+      </div>
+    </div>
+  </div>
+
+  <ul class="facts">
+    <li><b>Precision and recall pull against each other.</b> Loosening matching (fuzzy, synonyms, vectors) raises recall but lowers precision.</li>
+    <li><b>Indexing is a trade:</b> you spend storage and ingest time to buy query speed.</li>
+    <li><b>Retrieval ≠ ranking.</b> First find candidates cheaply, then order them carefully.</li>
+    <li><b>The vocabulary mismatch problem:</b> users say "car" while docs say "automobile". Most of the later techniques exist to fix this.</li>
+  </ul>
+</section>
+
+<!-- 01 Exact -->
+<section class="chapter" id="exact" style="--c:var(--idx)">
+  <div class="ch-head">
+    <div class="ch-num">01</div>
+    <h2>Exact match &amp; pattern search</h2>
+    <p class="purpose"><b>Purpose:</b> find the <b>literal</b> string or pattern. This is the simplest possible search: no index and no ranking.</p>
+    <div class="chips"><span class="chip"><b>Examples:</b> grep · ripgrep · SQL LIKE '%fox%' · regex · Ctrl+F</span><span class="chip"><b>Since:</b> grep, 1973</span></div>
+  </div>
+  <div class="lanes">
+    <div class="lane idx"><h3><svg><use href="#i-db"/></svg>Index time: transform &amp; store</h3>
+      <ol class="flow">
+        <li><b>Store raw text</b><span>Files or table rows as-is. No preprocessing.</span></li>
+        <li><b>(Optional) B-tree</b><span>A DB index helps only with <code>LIKE 'fox%'</code> prefixes, not with <code>'%fox%'</code>.</span></li>
+      </ol>
+    </div>
+    <div class="lane qry"><h3><svg><use href="#i-search"/></svg>Query time: execute &amp; rank</h3>
+      <ol class="flow">
+        <li><b>Compile pattern</b><span>A literal or a regex becomes an automaton.</span></li>
+        <li><b>Scan every doc</b><span>Read every byte, which is O(total text size).</span></li>
+        <li><b>Emit matches</b><span>A match is yes/no and results come back in file order. <b>No relevance score.</b></span></li>
+      </ol>
+    </div>
+  </div>
+  <figure class="diagram">
+    <svg viewBox="0 0 900 130" role="img" aria-label="Linear scan over all documents">
+      <g>
+        <rect class="d-box" x="20" y="40" width="80" height="50" rx="8"/><text class="tms" x="60" y="69" text-anchor="middle">doc 1</text>
+        <rect class="d-box" x="115" y="40" width="80" height="50" rx="8"/><text class="tms" x="155" y="69" text-anchor="middle">doc 2</text>
+        <rect class="d-acc" x="210" y="40" width="80" height="50" rx="8"/><text class="tm" x="250" y="69" text-anchor="middle">"fox" ✓</text>
+        <rect class="d-box" x="305" y="40" width="80" height="50" rx="8"/><text class="tms" x="345" y="69" text-anchor="middle">doc 4</text>
+        <rect class="d-box" x="400" y="40" width="80" height="50" rx="8"/><text class="tms" x="440" y="69" text-anchor="middle">doc 5</text>
+        <rect class="d-acc" x="495" y="40" width="80" height="50" rx="8"/><text class="tm" x="535" y="69" text-anchor="middle">"fox" ✓</text>
+        <rect class="d-box" x="590" y="40" width="80" height="50" rx="8"/><text class="tms" x="630" y="69" text-anchor="middle">…</text>
+        <rect class="d-box" x="685" y="40" width="80" height="50" rx="8"/><text class="tms" x="725" y="69" text-anchor="middle">doc N</text>
+      </g>
+      <path class="d-arrow qry" d="M20 110H780"/>
+      <text class="ts f-qry" x="20" y="28">scanner reads everything, left to right</text>
+      <text class="t" x="800" y="62">O(N)</text><text class="ts" x="800" y="80">slow at scale</text>
+    </svg>
+  </figure>
+  <ul class="facts">
+    <li><b>Perfect for code and logs:</b> exact, predictable, and needs zero setup.</li>
+    <li class="warn"><b>Misses variants:</b> a search for "fox" won't find "Foxes" or "vixen". Case and spelling must match exactly.</li>
+    <li class="warn"><b>Doesn't scale:</b> every query reads the whole corpus, so latency grows with data size.</li>
+    <li><b>Still useful later:</b> exact filters such as IDs, SKUs and error codes run next to fancy search.</li>
+  </ul>
+</section>
+
+<!-- 02 Boolean -->
+<section class="chapter" id="boolean" style="--c:var(--idx)">
+  <div class="ch-head">
+    <div class="ch-num">02</div>
+    <h2>Boolean search &amp; the inverted index</h2>
+    <p class="purpose"><b>Purpose:</b> skip the scan. Precompute <b>term → list of docs</b>, then answer <code>AND / OR / NOT</code> with set operations.</p>
+    <div class="chips"><span class="chip"><b>Builds on:</b> exact match</span><span class="chip"><b>Foundation of:</b> every keyword engine (Lucene, Elasticsearch, OpenSearch, Solr, Postgres FTS)</span></div>
+  </div>
+  <div class="lanes">
+    <div class="lane idx"><h3><svg><use href="#i-db"/></svg>Index time: transform &amp; store</h3>
+      <ol class="flow">
+        <li><b>Assign doc IDs</b><span>An integer per document, e.g. 1, 2, 3…</span></li>
+        <li><b>Tokenize</b><span>Split the text into terms.</span></li>
+        <li><b>Invert</b><span>For each term, record the IDs of the docs that contain it.</span></li>
+        <li><b>Store</b><span><b>Dictionary</b> (sorted terms) + <b>postings lists</b> (sorted, compressed IDs).</span></li>
+      </ol>
+    </div>
+    <div class="lane qry"><h3><svg><use href="#i-search"/></svg>Query time: execute &amp; rank</h3>
+      <ol class="flow">
+        <li><b>Parse</b><span><code>red AND fox NOT dog</code> becomes a query tree.</span></li>
+        <li><b>Look up terms</b><span>Each term costs O(log V) in the dictionary.</span></li>
+        <li><b>Merge postings</b><span>AND = intersect, OR = union, NOT = subtract.</span></li>
+        <li><b>Return set</b><span>Matching IDs only. Still <b>unranked</b>.</span></li>
+      </ol>
+    </div>
+  </div>
+  <figure class="diagram">
+    <svg viewBox="0 0 900 260" role="img" aria-label="Documents are inverted into a term to postings-list index">
+      <text class="th f-muted" x="20" y="22">Documents</text>
+      <rect class="d-box" x="20" y="36" width="230" height="44" rx="8"/><text class="tms" x="32" y="62">D1</text><text class="tm" x="62" y="62">red fox jumps</text>
+      <rect class="d-box" x="20" y="92" width="230" height="44" rx="8"/><text class="tms" x="32" y="118">D2</text><text class="tm" x="62" y="118">quick brown fox</text>
+      <rect class="d-box" x="20" y="148" width="230" height="44" rx="8"/><text class="tms" x="32" y="174">D3</text><text class="tm" x="62" y="174">red dog</text>
+      <path class="d-arrow idx" d="M265 114H345"/><text class="ts f-idx" x="305" y="104" text-anchor="middle">invert</text>
+      <text class="th f-idx" x="360" y="22">Dictionary → postings list</text>
+      <g>
+        <rect class="d-idx" x="360" y="36" width="90" height="28" rx="6"/><text class="tm" x="372" y="55">brown</text><path class="d-line thin" d="M450 50H470"/><rect class="d-box" x="470" y="36" width="28" height="28" rx="5"/><text class="tm" x="484" y="55" text-anchor="middle">2</text>
+        <rect class="d-idx" x="360" y="70" width="90" height="28" rx="6"/><text class="tm" x="372" y="89">dog</text><path class="d-line thin" d="M450 84H470"/><rect class="d-box" x="470" y="70" width="28" height="28" rx="5"/><text class="tm" x="484" y="89" text-anchor="middle">3</text>
+        <rect class="d-idx" x="360" y="104" width="90" height="28" rx="6"/><text class="tm" x="372" y="123">fox</text><path class="d-line thin" d="M450 118H470"/><rect class="d-acc" x="470" y="104" width="28" height="28" rx="5"/><text class="tm" x="484" y="123" text-anchor="middle">1</text><rect class="d-box" x="503" y="104" width="28" height="28" rx="5"/><text class="tm" x="517" y="123" text-anchor="middle">2</text>
+        <rect class="d-idx" x="360" y="138" width="90" height="28" rx="6"/><text class="tm" x="372" y="157">jumps</text><path class="d-line thin" d="M450 152H470"/><rect class="d-box" x="470" y="138" width="28" height="28" rx="5"/><text class="tm" x="484" y="157" text-anchor="middle">1</text>
+        <rect class="d-idx" x="360" y="172" width="90" height="28" rx="6"/><text class="tm" x="372" y="191">quick</text><path class="d-line thin" d="M450 186H470"/><rect class="d-box" x="470" y="172" width="28" height="28" rx="5"/><text class="tm" x="484" y="191" text-anchor="middle">2</text>
+        <rect class="d-idx" x="360" y="206" width="90" height="28" rx="6"/><text class="tm" x="372" y="225">red</text><path class="d-line thin" d="M450 220H470"/><rect class="d-acc" x="470" y="206" width="28" height="28" rx="5"/><text class="tm" x="484" y="225" text-anchor="middle">1</text><rect class="d-box" x="503" y="206" width="28" height="28" rx="5"/><text class="tm" x="517" y="225" text-anchor="middle">3</text>
+      </g>
+      <text class="th f-qry" x="600" y="22">Query: red AND fox</text>
+      <rect class="d-qry" x="600" y="40" width="280" height="160" rx="12"/>
+      <text class="tm" x="620" y="72">red  → [1, 3]</text>
+      <text class="tm" x="620" y="96">fox  → [1, 2]</text>
+      <path class="d-line thin" d="M620 110H860"/>
+      <text class="tm" x="620" y="134">AND = intersect → [1]</text>
+      <text class="ts" x="620" y="160">Walk both sorted lists with two pointers:</text>
+      <text class="ts" x="620" y="176">O(len₁ + len₂), skip-lists make it faster.</text>
+      <text class="t f-qry" x="620" y="246">Result: D1 (unranked)</text>
+    </svg>
+    <figcaption>The <b>inverted index</b> is the backbone of all keyword search. It's like the index at the back of a book.</figcaption>
+  </figure>
+  <ul class="facts">
+    <li><b>Fast:</b> query cost depends on the postings lengths, not on corpus size.</li>
+    <li><b>Compressed:</b> postings store <i>delta-encoded</i> IDs (1, 5, 9 → 1, +4, +4) using variable-byte or bit-packing.</li>
+    <li><b>Immutable segments:</b> Lucene writes small index segments and merges them in the background. That's why updates are "near real-time".</li>
+    <li class="warn"><b>Binary relevance:</b> a doc matches or it doesn't. With 10,000 matches, which one comes first? See <a href="#bm25">BM25</a>.</li>
+  </ul>
+</section>
+
+<!-- 03 Lexical -->
+<section class="chapter" id="lexical" style="--c:var(--idx)">
+  <div class="ch-head">
+    <div class="ch-num">03</div>
+    <h2>Lexical (full-text) search</h2>
+    <p class="purpose"><b>Purpose:</b> match <b>words, not exact strings</b>. An <b>analyzer</b> normalizes text so that "Running Foxes" matches "fox run".</p>
+    <div class="chips"><span class="chip"><b>Builds on:</b> inverted index</span><span class="chip"><b>Also called:</b> keyword search, sparse retrieval</span><span class="chip"><b>Ranked by:</b> TF-IDF / BM25</span></div>
+  </div>
+  <div class="lanes">
+    <div class="lane idx"><h3><svg><use href="#i-db"/></svg>Index time: the analyzer chain</h3>
+      <ol class="flow">
+        <li><b>Char filters</b><span>Strip HTML and map characters (é → e).</span></li>
+        <li><b>Tokenizer</b><span>Split on whitespace and punctuation (Unicode rules).</span></li>
+        <li><b>Lowercase</b><span>"Fox" and "fox" become the same term.</span></li>
+        <li><b>Stop words</b><span>Drop "the", "a", "of". Optional today.</span></li>
+        <li><b>Stem / lemmatize</b><span>running → run, foxes → fox.</span></li>
+        <li><b>Store postings</b><span>term → [docID, <b>tf</b>, positions] plus doc length.</span></li>
+      </ol>
+    </div>
+    <div class="lane qry"><h3><svg><use href="#i-search"/></svg>Query time: execute &amp; rank</h3>
+      <ol class="flow">
+        <li><b>Same analyzer</b><span>The query goes through the identical chain.</span></li>
+        <li><b>Expand (opt.)</b><span>Synonyms: car ⇄ automobile.</span></li>
+        <li><b>OR the terms</b><span>Gather docs containing any query term.</span></li>
+        <li><b>Score</b><span>BM25 per term, summed per doc.</span></li>
+        <li><b>Top-k heap</b><span>Keep the best k. WAND / block-max pruning skips hopeless docs.</span></li>
+      </ol>
+    </div>
+  </div>
+  <div class="example">
+    <h4>Worked example: one sentence through the analyzer</h4>
+    <div class="steps">
+      <div class="row"><span>Input</span><div class="toks"><span class="tok">"The Running Foxes &lt;b&gt;jumped&lt;/b&gt;!"</span></div></div>
+      <div class="row"><span>Char filter</span><div class="toks"><span class="tok">The Running Foxes jumped!</span></div></div>
+      <div class="row"><span>Tokenize</span><div class="toks"><span class="tok">The</span><span class="tok">Running</span><span class="tok">Foxes</span><span class="tok">jumped</span></div></div>
+      <div class="row"><span>Lowercase</span><div class="toks"><span class="tok">the</span><span class="tok">running</span><span class="tok">foxes</span><span class="tok">jumped</span></div></div>
+      <div class="row"><span>Stop words</span><div class="toks"><span class="tok x">the</span><span class="tok">running</span><span class="tok">foxes</span><span class="tok">jumped</span></div></div>
+      <div class="row"><span>Stem</span><div class="toks"><span class="tok idx">run</span><span class="tok idx">fox</span><span class="tok idx">jump</span></div></div>
+    </div>
+  </div>
+  <ul class="facts">
+    <li><b>Stemming</b> chops suffixes by rule (Porter, Snowball) and is fast but crude: "university" → "univers". <b>Lemmatization</b> uses a dictionary to find the real base form: "better" → "good".</li>
+    <li><b>Analyzers are per-language.</b> German needs compound splitting and CJK needs n-gram or dictionary tokenizers.</li>
+    <li><b>It's called "sparse"</b> because each doc is a vector over the whole vocabulary that is almost all zeros.</li>
+    <li class="warn"><b>Still literal at heart:</b> it won't connect "heart attack" to "myocardial infarction" unless you add synonyms.</li>
+  </ul>
+</section>
+
+<!-- 04 Phrase -->
+<section class="chapter" id="phrase" style="--c:var(--idx)">
+  <div class="ch-head">
+    <div class="ch-num">04</div>
+    <h2>Phrase &amp; proximity search</h2>
+    <p class="purpose"><b>Purpose:</b> word <b>order and closeness</b> matter. <code>"new york"</code> ≠ "york … new".</p>
+    <div class="chips"><span class="chip"><b>Builds on:</b> lexical search</span><span class="chip"><b>Needs:</b> positional index</span></div>
+  </div>
+  <div class="lanes">
+    <div class="lane idx"><h3><svg><use href="#i-db"/></svg>Index time: transform &amp; store</h3>
+      <ol class="flow">
+        <li><b>Analyze</b><span>Same analyzer chain as chapter 03.</span></li>
+        <li><b>Record positions</b><span>Store each term's word offsets in the doc.</span></li>
+        <li><b>(Opt.) shingles</b><span>Also index word pairs, e.g. "new_york", for speed.</span></li>
+      </ol>
+    </div>
+    <div class="lane qry"><h3><svg><use href="#i-search"/></svg>Query time: execute &amp; rank</h3>
+      <ol class="flow">
+        <li><b>AND the terms</b><span>Candidate docs must contain all of them.</span></li>
+        <li><b>Check positions</b><span>pos(york) = pos(new) + 1 for an exact phrase.</span></li>
+        <li><b>Allow slop</b><span><code>"quick fox"~2</code> allows up to 2 moves.</span></li>
+        <li><b>Boost</b><span>Closer terms score higher.</span></li>
+      </ol>
+    </div>
+  </div>
+  <div class="example">
+    <h4>Positional postings: query <code>"brown fox"</code></h4>
+    <div class="steps">
+      <div class="row"><span>brown</span><div class="toks"><span class="tok">D2 @ [1]</span><span class="tok">D7 @ [4, 9]</span></div></div>
+      <div class="row"><span>fox</span><div class="toks"><span class="tok">D2 @ [2]</span><span class="tok">D7 @ [12]</span></div></div>
+      <div class="row"><span>Check</span><div class="toks"><span class="tok hi">D2: 1 → 2 adjacent ✓</span><span class="tok x">D7: 9 → 12 gap 3</span><span class="tok">D7 ✓ only if slop ≥ 2</span></div></div>
+    </div>
+  </div>
+  <ul class="facts">
+    <li><b>Positions cost space,</b> often doubling the index. Disable them on fields where you never run phrase queries.</li>
+    <li><b>Proximity is a cheap relevance signal:</b> query words that sit close together usually mean the doc is on topic.</li>
+  </ul>
+</section>
+
+<!-- 05 Fuzzy -->
+<section class="chapter" id="fuzzy" style="--c:var(--idx)">
+  <div class="ch-head">
+    <div class="ch-num">05</div>
+    <h2>Fuzzy search</h2>
+    <p class="purpose"><b>Purpose:</b> tolerate <b>typos and spelling variants</b>. "accomodation" should still find "accommodation".</p>
+    <div class="chips"><span class="chip"><b>Builds on:</b> lexical search</span><span class="chip"><b>Key metric:</b> Levenshtein edit distance (1965)</span><span class="chip"><b>Also:</b> n-grams · wildcard · phonetic · "did you mean"</span></div>
+  </div>
+  <div class="lanes">
+    <div class="lane idx"><h3><svg><use href="#i-db"/></svg>Index time: transform &amp; store</h3>
+      <ol class="flow">
+        <li><b>Term dictionary as FST</b><span>A finite-state transducer: a compact, walkable automaton of all terms.</span></li>
+        <li><b>(Opt.) n-gram field</b><span>"fox" → <code>fo, ox</code>, or edge n-grams <code>f, fo, fox</code> for autocomplete.</span></li>
+        <li><b>(Opt.) phonetic field</b><span>Soundex or Metaphone: "Smith" ≈ "Smyth" → S530.</span></li>
+      </ol>
+    </div>
+    <div class="lane qry"><h3><svg><use href="#i-search"/></svg>Query time: execute &amp; rank</h3>
+      <ol class="flow">
+        <li><b>Build automaton</b><span>A Levenshtein automaton accepts every word within distance ≤ k of the query.</span></li>
+        <li><b>Intersect with FST</b><span>Enumerate the real index terms it accepts, e.g. "fox" → fox, fix, box, fax.</span></li>
+        <li><b>Rewrite query</b><span>OR the expanded terms together, capped at about 50 expansions.</span></li>
+        <li><b>Score</b><span>BM25 per term, with a penalty for larger edit distance.</span></li>
+      </ol>
+    </div>
+  </div>
+
+  <div class="demo" id="levdemo">
+    <h4><svg><use href="#i-play"/></svg>Try it: Levenshtein edit distance</h4>
+    <div class="lev-inputs">
+      <div><label for="lev-a">Query term</label><input type="text" id="lev-a" value="acomodation" maxlength="16" autocomplete="off" spellcheck="false"></div>
+      <div><label for="lev-b">Index term</label><input type="text" id="lev-b" value="accommodation" maxlength="16" autocomplete="off" spellcheck="false"></div>
+    </div>
+    <div class="result" id="lev-out">distance = 2</div>
+    <div class="matrix-wrap" id="lev-matrix"></div>
+  </div>
+
+  <div class="example">
+    <h4>Fuzzy toolbox: pick by use case</h4>
+    <div class="steps">
+      <div class="row"><span>Edit distance</span><div class="toks"><span class="tok">kitten → sitting = 3</span><span class="tok">typos in any position</span><span class="tok rank">ES: fuzziness: AUTO</span></div></div>
+      <div class="row"><span>Damerau</span><div class="toks"><span class="tok">teh → the = 1</span><span class="tok">counts a transposition as 1 edit</span></div></div>
+      <div class="row"><span>n-grams</span><div class="toks"><span class="tok">trigrams of "search": sea · ear · arc · rch</span><span class="tok">partial and substring match</span><span class="tok rank">pg_trgm</span></div></div>
+      <div class="row"><span>Wildcard / prefix</span><div class="toks"><span class="tok">mach* → machine, machining</span><span class="tok">autocomplete</span></div></div>
+      <div class="row"><span>Phonetic</span><div class="toks"><span class="tok">Robert ≈ Rupert (R163)</span><span class="tok">names and people search</span></div></div>
+    </div>
+  </div>
+  <ul class="facts">
+    <li><b>"Fuzziness: AUTO"</b> in Elasticsearch means terms of 0–2 chars must be exact, 3–5 chars allow 1 edit, and longer terms allow 2.</li>
+    <li><b>Fuzzy ≠ semantic.</b> It fixes <i>spelling</i>, not <i>meaning</i>: "car" won't find "vehicle". For meaning, see <a href="#embeddings">embeddings</a>.</li>
+    <li class="warn"><b>Costly and noisy:</b> distance 2 on short words over-matches ("cat" → "car", "hat", "act"). Require a prefix length.</li>
+    <li><b>Spell-check ("did you mean")</b> uses the same machinery but suggests a correction instead of silently expanding the query.</li>
+  </ul>
+</section>
+
+<!-- =============================================================== -->
+<div class="part-title" style="--c:var(--rank)">Part II · Relevance ranking</div>
+
+<!-- 06 BM25 -->
+<section class="chapter" id="bm25" style="--c:var(--rank)">
+  <div class="ch-head">
+    <div class="ch-num">06</div>
+    <h2>Relevance ranking: TF-IDF → BM25</h2>
+    <p class="purpose"><b>Purpose:</b> put the <b>best</b> matches first. A doc ranks higher when it uses the query's <b>rare</b> words <b>often</b>, adjusted for <b>doc length</b>.</p>
+    <div class="chips"><span class="chip"><b>Builds on:</b> lexical search</span><span class="chip"><b>TF-IDF:</b> 1972</span><span class="chip"><b>BM25:</b> Okapi, 1994</span><span class="chip"><b>Default in:</b> Lucene / Elasticsearch / OpenSearch / Solr</span></div>
+  </div>
+  <div class="lanes">
+    <div class="lane idx"><h3><svg><use href="#i-db"/></svg>Index time: store the statistics</h3>
+      <ol class="flow">
+        <li><b>tf per posting</b><span>How often the term appears in this doc.</span></li>
+        <li><b>df per term</b><span>How many docs contain the term.</span></li>
+        <li><b>Doc length</b><span>Stored as a compact "norm" per field.</span></li>
+        <li><b>Globals</b><span><b>N</b> = number of docs, <b>avgdl</b> = average doc length.</span></li>
+      </ol>
+    </div>
+    <div class="lane rank"><h3><svg><use href="#i-rank"/></svg>Query time: score step by step</h3>
+      <ol class="flow">
+        <li><b>IDF per query term</b><span>Rare term → high weight. "the" → ~0.</span></li>
+        <li><b>TF part per doc</b><span>Grows with tf but <b>saturates</b>, and is penalized for long docs.</span></li>
+        <li><b>Multiply</b><span>IDF × TF part = term score.</span></li>
+        <li><b>Sum over terms</b><span>Add field boosts (title^2).</span></li>
+        <li><b>Sort → top-k</b><span>Return the highest scores first.</span></li>
+      </ol>
+    </div>
+  </div>
+
+  <div class="formula">
+    <span class="c">TF-IDF:</span>  score = Σ <span class="v">tf</span> × log(<span class="v">N</span> / <span class="v">df</span>)<br>
+    <span class="c">BM25:</span>&nbsp;&nbsp;  score(D,Q) = Σ<sub>q∈Q</sub> IDF(q) · <span class="v">tf</span>·(<span class="k">k1</span>+1) / ( <span class="v">tf</span> + <span class="k">k1</span>·(1 − <span class="k">b</span> + <span class="k">b</span>·<span class="v">|D|</span>/<span class="v">avgdl</span>) )<br>
+    <span class="c">IDF:</span>&nbsp;&nbsp;&nbsp;  ln(1 + (<span class="v">N</span> − <span class="v">n</span> + 0.5) / (<span class="v">n</span> + 0.5))  <span class="c">   // n = df, Lucene variant</span>
+  </div>
+
+  <div class="demo" id="bm25demo">
+    <h4><svg><use href="#i-play"/></svg>Try it: BM25 playground for one query term</h4>
+    <div class="demo-grid">
+      <div>
+        <div class="ctrl"><label for="bm-tf">tf: term count in doc</label><output for="bm-tf">3</output><input type="range" id="bm-tf" min="0" max="20" step="1" value="3"></div>
+        <div class="ctrl"><label for="bm-dl">|D|: doc length</label><output for="bm-dl">100</output><input type="range" id="bm-dl" min="10" max="500" step="10" value="100"></div>
+        <div class="ctrl"><label for="bm-avgdl">avgdl: average length</label><output for="bm-avgdl">100</output><input type="range" id="bm-avgdl" min="20" max="400" step="10" value="100"></div>
+        <div class="ctrl"><label for="bm-N">N: docs in corpus</label><output for="bm-N">10000</output><input type="range" id="bm-N" min="100" max="100000" step="100" value="10000"></div>
+        <div class="ctrl"><label for="bm-df">n: docs containing term</label><output for="bm-df">50</output><input type="range" id="bm-df" min="1" max="10000" step="1" value="50"></div>
+        <div class="ctrl"><label for="bm-k1">k1: saturation</label><output for="bm-k1">1.20</output><input type="range" id="bm-k1" min="0" max="3" step="0.05" value="1.2"></div>
+        <div class="ctrl"><label for="bm-b">b: length normalization</label><output for="bm-b">0.75</output><input type="range" id="bm-b" min="0" max="1" step="0.05" value="0.75"></div>
+      </div>
+      <div>
+        <div id="bm-chart" class="diagram" style="margin:0"></div>
+        <div class="legend" style="margin-top:6px">
+          <span><i style="background:var(--accent)"></i>this doc's length</span>
+          <span><i style="background:var(--idx)"></i>short doc (½ avg)</span>
+          <span><i style="background:var(--qry)"></i>long doc (2× avg)</span>
+        </div>
+        <div class="result" id="bm-out" style="font-weight:500"></div>
+      </div>
+    </div>
+  </div>
+
+  <ul class="facts" style="--c:var(--rank)">
+    <li><b>IDF</b> (inverse document frequency) means rare terms carry the signal. "BM25" in a query outweighs "the" by orders of magnitude.</li>
+    <li><b>k1 ≈ 1.2</b> controls saturation: the 10th mention of "fox" adds far less than the 2nd. Plain TF-IDF has no ceiling, so keyword stuffing works on it.</li>
+    <li><b>b ≈ 0.75</b> controls length normalization: a hit in a 50-word abstract beats a hit in a 5,000-word manual. b = 0 turns it off.</li>
+    <li><b>BM25F / multi-field:</b> score title, body and tags separately and weight them. A title match usually matters most.</li>
+    <li><b>A hard baseline to beat:</b> on out-of-domain benchmarks (BEIR), BM25 still rivals many neural retrievers.</li>
+    <li class="warn"><b>Bag of words:</b> BM25 ignores meaning and word order. It needs <a href="#phrase">proximity</a>, <a href="#embeddings">embeddings</a> or <a href="#rerank">re-ranking</a> for those.</li>
+  </ul>
+</section>
+
+<!-- 07 Similarity -->
+<section class="chapter" id="similarity" style="--c:var(--rank)">
+  <div class="ch-head">
+    <div class="ch-num">07</div>
+    <h2>Similarity search</h2>
+    <p class="purpose"><b>Purpose:</b> find items <b>close to</b> a given item. Represent everything as a <b>vector</b> and rank by distance. This idea turns "search" into "geometry".</p>
+    <div class="chips"><span class="chip"><b>Builds on:</b> vector space model (Salton, 1975)</span><span class="chip"><b>Also called:</b> nearest-neighbor search, kNN, "more like this"</span><span class="chip"><b>Leads to:</b> vector search</span></div>
+  </div>
+  <div class="lanes">
+    <div class="lane idx"><h3><svg><use href="#i-db"/></svg>Index time: transform &amp; store</h3>
+      <ol class="flow">
+        <li><b>Featurize</b><span>Turn each item into a vector: TF-IDF weights, image features, user behavior, or embeddings.</span></li>
+        <li><b>Normalize</b><span>Scale to unit length, so that cosine = dot product.</span></li>
+        <li><b>Store</b><span>A matrix of vectors, or hash buckets (LSH) for near-duplicates.</span></li>
+      </ol>
+    </div>
+    <div class="lane qry"><h3><svg><use href="#i-search"/></svg>Query time: execute &amp; rank</h3>
+      <ol class="flow">
+        <li><b>Vectorize query</b><span>Use the same featurizer as the docs.</span></li>
+        <li><b>Compare</b><span>Compute the distance to every vector (brute force) or to bucket-mates (LSH).</span></li>
+        <li><b>Rank by distance</b><span>Smallest distance / highest similarity first.</span></li>
+        <li><b>Top-k (kNN)</b><span>Return the k nearest neighbors.</span></li>
+      </ol>
+    </div>
+  </div>
+  <div class="grid2">
+    <figure class="diagram small">
+      <svg viewBox="0 0 420 270" role="img" aria-label="Vectors in 2D space, cosine similarity is the angle between them">
+        <line class="d-grid" x1="40" y1="230" x2="400" y2="230"/><line class="d-grid" x1="40" y1="230" x2="40" y2="20"/>
+        <text class="ts" x="400" y="248" text-anchor="end">dimension 1 (e.g. "fox")</text>
+        <text class="ts" x="46" y="18">dimension 2 (e.g. "dog")</text>
+        <path class="d-arrow qry" d="M40 230 L330 110"/><text class="t f-qry" x="336" y="106">query</text>
+        <path class="d-arrow idx" d="M40 230 L270 60"/><text class="t f-idx" x="276" y="56">doc A</text>
+        <path class="d-arrow" d="M40 230 L370 210"/><text class="t" x="352" y="200">doc B</text>
+        <path class="d-line acc" d="M120 197 A 90 90 0 0 0 112 177" />
+        <text class="tm f-acc" x="146" y="174">θ small</text>
+        <text class="ts" x="60" y="262">cos θ ≈ 1 → similar · cos θ ≈ 0 → unrelated</text>
+      </svg>
+      <figcaption><b>Cosine</b> compares direction and ignores magnitude, so doc length doesn't matter.</figcaption>
+    </figure>
+    <div class="example" style="margin:0">
+      <h4>Distance metrics cheat sheet</h4>
+      <div class="steps">
+        <div class="row"><span>Cosine</span><span><code>a·b / (|a||b|)</code>. Text default, range −1…1.</span></div>
+        <div class="row"><span>Dot product</span><span><code>Σ aᵢbᵢ</code>. Equals cosine on normalized vectors and is the fastest.</span></div>
+        <div class="row"><span>Euclidean (L2)</span><span><code>√Σ(aᵢ−bᵢ)²</code>. Straight-line distance, used for images and geo.</span></div>
+        <div class="row"><span>Jaccard</span><span><code>|A∩B| / |A∪B|</code>. Overlap of sets (shingles, tags).</span></div>
+        <div class="row"><span>Hamming</span><span>Bit differences between binary codes. Extremely fast.</span></div>
+      </div>
+    </div>
+  </div>
+  <ul class="facts" style="--c:var(--rank)">
+    <li><b>TF-IDF vectors are already "similarity search".</b> Lucene's <i>More Like This</i> query finds docs similar to a given doc.</li>
+    <li><b>MinHash + LSH</b> (locality-sensitive hashing) hashes similar sets into the same bucket. It's the classic way to find <b>near-duplicate</b> pages at web scale.</li>
+    <li class="warn"><b>Brute force is O(N·d)</b> per query. That's fine for 100k vectors but too slow for 100M, which is why <a href="#ann">ANN indexes</a> exist.</li>
+    <li class="warn"><b>The curse of dimensionality:</b> in very high dimensions everything looks equally far apart. Good representations matter more than the metric.</li>
+  </ul>
+</section>
+
+<!-- =============================================================== -->
+<div class="part-title" style="--c:var(--qry)">Part III · Vector &amp; neural</div>
+
+<!-- 08 Embeddings -->
+<section class="chapter" id="embeddings" style="--c:var(--qry)">
+  <div class="ch-head">
+    <div class="ch-num">08</div>
+    <h2>Vector embeddings</h2>
+    <p class="purpose"><b>Purpose:</b> represent <b>meaning</b> as a dense vector, so that "car" and "automobile" land next to each other even though they share no letters.</p>
+    <div class="chips"><span class="chip"><b>Builds on:</b> similarity search</span><span class="chip"><b>word2vec:</b> 2013</span><span class="chip"><b>Contextual (BERT):</b> 2018</span><span class="chip"><b>Also called:</b> dense retrieval, semantic search</span></div>
+  </div>
+  <div class="lanes">
+    <div class="lane idx"><h3><svg><use href="#i-db"/></svg>Index time: transform &amp; store</h3>
+      <ol class="flow">
+        <li><b>Extract &amp; clean</b><span>PDF, HTML or DOCX → plain text plus metadata.</span></li>
+        <li><b>Chunk</b><span>Split into passages of about 200–800 tokens with some overlap. Respect headings.</span></li>
+        <li><b>Embed</b><span>An encoder model maps each chunk to a vector of 384–3072 floats.</span></li>
+        <li><b>Normalize / quantize</b><span>Unit length. Optionally float32 → int8 / binary.</span></li>
+        <li><b>Store</b><span>Vector + chunk text + metadata (source, page, ACL) in a vector index.</span></li>
+      </ol>
+    </div>
+    <div class="lane qry"><h3><svg><use href="#i-search"/></svg>Query time: execute &amp; rank</h3>
+      <ol class="flow">
+        <li><b>Embed the query</b><span>Use the <b>same model</b>. Some need a "query:" prefix or an instruction.</span></li>
+        <li><b>Nearest neighbors</b><span>Cosine / dot product against the stored vectors (see <a href="#ann">09</a>).</span></li>
+        <li><b>Rank by similarity</b><span>The highest cosine is the most semantically similar.</span></li>
+        <li><b>Return chunks</b><span>Top-k passages with their source metadata.</span></li>
+      </ol>
+    </div>
+  </div>
+  <figure class="diagram">
+    <svg viewBox="0 0 900 290" role="img" aria-label="Text is encoded into vectors, which cluster by meaning">
+      <rect class="d-box" x="20" y="40" width="190" height="44" rx="10"/><text class="tm" x="115" y="67" text-anchor="middle">"How do I fix my car?"</text>
+      <rect class="d-box" x="20" y="100" width="190" height="44" rx="10"/><text class="tm" x="115" y="127" text-anchor="middle">"automobile repair"</text>
+      <rect class="d-box" x="20" y="160" width="190" height="44" rx="10"/><text class="tm" x="115" y="187" text-anchor="middle">"golden retriever puppy"</text>
+      <path class="d-arrow qry" d="M210 62C240 62 240 110 262 118"/><path class="d-arrow qry" d="M210 122H262"/><path class="d-arrow qry" d="M210 182C240 182 240 134 262 126"/>
+      <rect class="d-qry" x="266" y="92" width="120" height="60" rx="12"/><text class="t" x="326" y="118" text-anchor="middle">Encoder</text><text class="ts" x="326" y="135" text-anchor="middle">transformer</text>
+      <path class="d-arrow qry" d="M386 122H416"/>
+      <text class="tms" x="420" y="68">[ 0.12, −0.83, 0.05, …, 0.44 ]</text>
+      <text class="tms" x="420" y="126">[ 0.10, −0.79, 0.11, …, 0.40 ]</text>
+      <text class="tms" x="420" y="186">[ −0.61, 0.22, 0.73, …, −0.08 ]</text>
+      <text class="ts" x="420" y="220">768 floats each, meaning is spread</text>
+      <!-- semantic map -->
+      <rect class="d-box2" x="640" y="20" width="250" height="250" rx="12"/>
+      <text class="th f-muted" x="652" y="40">Embedding space (2D projection)</text>
+      <ellipse class="c-qry" cx="730" cy="100" rx="62" ry="38"/>
+      <circle class="dot qry" cx="705" cy="92" r="5"/><text class="ts" x="690" y="82">car</text>
+      <circle class="dot qry" cx="742" cy="104" r="5"/><text class="ts" x="748" y="100">automobile</text>
+      <circle class="dot qry" cx="722" cy="118" r="5"/><text class="ts" x="690" y="132">repair</text>
+      <ellipse class="c-idx" cx="815" cy="200" rx="58" ry="40"/>
+      <circle class="dot idx" cx="800" cy="190" r="5"/><text class="ts" x="776" y="182">puppy</text>
+      <circle class="dot idx" cx="830" cy="206" r="5"/><text class="ts" x="838" y="202">dog</text>
+      <circle class="dot idx" cx="806" cy="218" r="5"/><text class="ts" x="776" y="232">retriever</text>
+      <ellipse class="c-rank" cx="700" cy="220" rx="40" ry="28"/>
+      <circle class="dot rank" cx="690" cy="214" r="5"/><text class="ts" x="664" y="206">king</text>
+      <circle class="dot rank" cx="712" cy="228" r="5"/><text class="ts" x="718" y="236">queen</text>
+    </svg>
+    <figcaption>The encoder plays the role the analyzer played in lexical search. <b>Close in space means close in meaning.</b></figcaption>
+  </figure>
+  <ul class="facts" style="--c:var(--qry)">
+    <li><b>Static vs contextual:</b> word2vec gives "bank" one vector. Transformers give "river bank" and "bank loan" different vectors.</li>
+    <li><b>Bi-encoder:</b> docs and queries are embedded <i>independently</i>, so doc vectors can be precomputed. That's what makes it fast.</li>
+    <li><b>Chunking matters a lot:</b> chunks that are too big blur the meaning, and chunks that are too small lose context. Add a title or breadcrumb to each chunk.</li>
+    <li><b>Storage math:</b> 1M chunks × 768 dims × 4 bytes ≈ 3 GB. Matryoshka truncation or int8/binary quantization cuts it 4–32×.</li>
+    <li class="warn"><b>Weak at exact tokens:</b> part numbers, names, error codes and negation ("not red") are often fuzzy in vector space. Pair with <a href="#hybrid">BM25</a>.</li>
+    <li class="warn"><b>Switching models means re-embedding everything.</b> Vectors from different models are not comparable.</li>
+  </ul>
+</section>
+
+<!-- 09 ANN -->
+<section class="chapter" id="ann" style="--c:var(--qry)">
+  <div class="ch-head">
+    <div class="ch-num">09</div>
+    <h2>Vector search &amp; ANN indexes</h2>
+    <p class="purpose"><b>Purpose:</b> find nearest neighbors among <b>millions or billions</b> of vectors in milliseconds by accepting an <b>approximate</b> answer: 95–99% recall in exchange for 100–1000× speed.</p>
+    <div class="chips"><span class="chip"><b>Builds on:</b> embeddings + similarity</span><span class="chip"><b>HNSW:</b> 2016</span><span class="chip"><b>Others:</b> IVF · PQ · DiskANN · ScaNN</span><span class="chip"><b>Tools:</b> FAISS · pgvector · Qdrant · Milvus · Weaviate · Elasticsearch / OpenSearch kNN</span></div>
+  </div>
+  <div class="lanes">
+    <div class="lane idx"><h3><svg><use href="#i-db"/></svg>Index time: build HNSW</h3>
+      <ol class="flow">
+        <li><b>Pick a top layer</b><span>Random and exponentially rare: most nodes live only on layer 0.</span></li>
+        <li><b>Find neighbors</b><span>Greedy-search the existing graph for the closest nodes (<code>ef_construction</code>).</span></li>
+        <li><b>Link M edges</b><span>Connect to about M (16–64) neighbors per layer, keeping links diverse.</span></li>
+        <li><b>Store graph + vectors</b><span>Usually in RAM. Alternatives: IVF clusters, PQ codes, on-disk (DiskANN).</span></li>
+      </ol>
+    </div>
+    <div class="lane qry"><h3><svg><use href="#i-search"/></svg>Query time: navigate the graph</h3>
+      <ol class="flow">
+        <li><b>Enter at the top</b><span>Start from a fixed entry point on the sparsest layer.</span></li>
+        <li><b>Greedy hop</b><span>Move to whichever neighbor is closer to the query, until none is.</span></li>
+        <li><b>Drop a layer</b><span>Repeat with shorter, more precise hops.</span></li>
+        <li><b>Beam search on layer 0</b><span>Keep <code>ef_search</code> candidates, explore their neighbors.</span></li>
+        <li><b>Return top-k</b><span>Sorted by distance. Approximate: it may miss a few true neighbors.</span></li>
+      </ol>
+    </div>
+  </div>
+  <figure class="diagram">
+    <svg viewBox="0 0 900 290" role="img" aria-label="HNSW multi-layer graph with greedy search path descending layers">
+      <rect class="d-box2" x="90" y="30" width="800" height="60" rx="10"/>
+      <rect class="d-box2" x="90" y="110" width="800" height="60" rx="10"/>
+      <rect class="d-box2" x="90" y="190" width="800" height="60" rx="10"/>
+      <text class="t" x="10" y="58">Layer 2</text><text class="ts" x="10" y="74">long hops</text>
+      <text class="t" x="10" y="138">Layer 1</text><text class="ts" x="10" y="154">medium</text>
+      <text class="t" x="10" y="218">Layer 0</text><text class="ts" x="10" y="234">all vectors</text>
+      <!-- vertical links -->
+      <g class="d-line thin dash">
+        <path d="M150 60V220"/><path d="M520 60V220"/><path d="M760 60V220"/>
+        <path d="M260 140V220"/><path d="M400 140V220"/><path d="M640 140V220"/><path d="M830 140V220"/>
+      </g>
+      <!-- edges -->
+      <g class="d-line thin">
+        <path d="M150 60H520M520 60H760"/>
+        <path d="M150 140H260M260 140H400M400 140H520M520 140H640M640 140H760M760 140H830"/>
+        <path d="M260 140C330 118 450 118 520 140"/>
+        <path d="M110 220H860"/>
+        <path d="M200 220C230 204 300 204 330 220M460 220C500 204 560 204 580 220M610 220C650 204 680 204 700 220"/>
+      </g>
+      <!-- nodes -->
+      <g>
+        <circle class="dot" cx="150" cy="60" r="7"/><circle class="dot" cx="520" cy="60" r="7"/><circle class="dot" cx="760" cy="60" r="7"/>
+        <circle class="dot" cx="150" cy="140" r="6"/><circle class="dot" cx="260" cy="140" r="6"/><circle class="dot" cx="400" cy="140" r="6"/><circle class="dot" cx="520" cy="140" r="6"/><circle class="dot" cx="640" cy="140" r="6"/><circle class="dot" cx="760" cy="140" r="6"/><circle class="dot" cx="830" cy="140" r="6"/>
+        <circle class="dot" cx="110" cy="220" r="5"/><circle class="dot" cx="150" cy="220" r="5"/><circle class="dot" cx="200" cy="220" r="5"/><circle class="dot" cx="260" cy="220" r="5"/><circle class="dot" cx="330" cy="220" r="5"/><circle class="dot" cx="400" cy="220" r="5"/><circle class="dot" cx="460" cy="220" r="5"/><circle class="dot" cx="520" cy="220" r="5"/><circle class="dot" cx="700" cy="220" r="5"/><circle class="dot" cx="760" cy="220" r="5"/><circle class="dot" cx="800" cy="220" r="5"/><circle class="dot" cx="830" cy="220" r="5"/><circle class="dot" cx="860" cy="220" r="5"/>
+        <circle class="dot qry" cx="580" cy="220" r="6"/><circle class="dot qry" cx="610" cy="220" r="6"/><circle class="dot qry" cx="640" cy="220" r="6"/>
+      </g>
+      <!-- search path -->
+      <path class="d-arrow qry" style="stroke-width:2.4" d="M158 52C260 30 420 30 510 52"/>
+      <path class="d-arrow qry" style="stroke-width:2.4" d="M528 68V130"/>
+      <path class="d-arrow qry" style="stroke-width:2.4" d="M528 132C560 118 600 118 630 132"/>
+      <path class="d-arrow qry" style="stroke-width:2.4" d="M648 148V210"/>
+      <ellipse class="c-qry" cx="610" cy="220" rx="48" ry="18"/>
+      <text class="t f-qry" x="150" y="44" text-anchor="middle">entry</text>
+      <path d="M610 262l5 -9 5 9 -5 9z" class="dot acc" transform="translate(-5 0)"/><text class="t f-acc" x="626" y="272">query vector</text>
+      <text class="ts f-qry" x="556" y="206" text-anchor="end">top-k found</text>
+    </svg>
+    <figcaption><b>HNSW</b> (Hierarchical Navigable Small World) works like a skip list made of graphs: highways at the top, local streets at the bottom.</figcaption>
+  </figure>
+  <div class="example">
+    <h4>Other ANN families in one line each</h4>
+    <div class="steps">
+      <div class="row"><span>IVF</span><span>k-means splits the space into cells. A query only probes the <code>nprobe</code> nearest cells.</span></div>
+      <div class="row"><span>PQ</span><span>Product quantization splits each vector into sub-vectors and stores codebook IDs: 3 KB → ~64 bytes.</span></div>
+      <div class="row"><span>DiskANN</span><span>A graph index on SSD, for billion-scale data on one machine.</span></div>
+      <div class="row"><span>Flat (exact)</span><span>Brute force. 100% recall. Fine below ~100k vectors or with GPU.</span></div>
+    </div>
+  </div>
+  <ul class="facts" style="--c:var(--qry)">
+    <li><b>The key dial is recall vs latency vs memory.</b> A higher <code>ef_search</code> / <code>nprobe</code> means better recall but slower queries.</li>
+    <li><b>Measure recall@k</b> against exact search on a sample. Never assume the ANN index is "close enough".</li>
+    <li class="warn"><b>Filtering is tricky:</b> post-filtering can return fewer than k results. Prefer engines with <i>filtered</i> HNSW / pre-filtering.</li>
+    <li class="warn"><b>Deletes and updates</b> leave graph "holes". Plan for periodic rebuilds or compaction.</li>
+  </ul>
+</section>
+
+<!-- 10 Sparse -->
+<section class="chapter" id="sparse" style="--c:var(--qry)">
+  <div class="ch-head">
+    <div class="ch-num">10</div>
+    <h2>Learned sparse retrieval</h2>
+    <p class="purpose"><b>Purpose:</b> bridge the two worlds. A neural model writes <b>weighted keywords, including expansions</b> into a <b>regular inverted index</b>.</p>
+    <div class="chips"><span class="chip"><b>Builds on:</b> BM25 + transformers</span><span class="chip"><b>Examples:</b> SPLADE (2021) · Elastic ELSER · uniCOIL</span></div>
+  </div>
+  <div class="lanes">
+    <div class="lane idx"><h3><svg><use href="#i-db"/></svg>Index time: transform &amp; store</h3>
+      <ol class="flow">
+        <li><b>Encode doc</b><span>A transformer predicts a weight for each vocabulary term.</span></li>
+        <li><b>Expand + sparsify</b><span>Keep the top ~100 terms, <b>including ones not in the text</b>.</span></li>
+        <li><b>Store as postings</b><span>term → (doc, weight) in a normal inverted index.</span></li>
+      </ol>
+    </div>
+    <div class="lane qry"><h3><svg><use href="#i-search"/></svg>Query time: execute &amp; rank</h3>
+      <ol class="flow">
+        <li><b>Encode query</b><span>The same model, or just tokens for a fast variant.</span></li>
+        <li><b>Inverted-index lookup</b><span>The same machinery as BM25.</span></li>
+        <li><b>Dot product</b><span>Σ query weight × doc weight over shared terms. Then top-k.</span></li>
+      </ol>
+    </div>
+  </div>
+  <div class="example">
+    <h4>Doc: "The Eiffel Tower is in Paris" → learned sparse vector</h4>
+    <div class="toks"><span class="tok rank">eiffel <small>2.4</small></span><span class="tok rank">tower <small>1.9</small></span><span class="tok rank">paris <small>1.8</small></span><span class="tok hi">france <small>1.1 · expanded</small></span><span class="tok hi">landmark <small>0.7 · expanded</small></span><span class="tok hi">monument <small>0.5 · expanded</small></span><span class="tok x">the</span><span class="tok x">is</span></div>
+  </div>
+  <ul class="facts" style="--c:var(--qry)">
+    <li><b>Interpretable:</b> you can read exactly why a doc matched, unlike a 768-dim dense vector.</li>
+    <li><b>Reuses keyword infrastructure:</b> it runs on Lucene-style engines and handles vocabulary mismatch through expansion.</li>
+    <li class="warn"><b>Cost:</b> it needs model inference at ingest, and the postings are denser than BM25's.</li>
+  </ul>
+</section>
+
+<!-- 11 Hybrid -->
+<section class="chapter" id="hybrid" style="--c:var(--qry)">
+  <div class="ch-head">
+    <div class="ch-num">11</div>
+    <h2>Hybrid search</h2>
+    <p class="purpose"><b>Purpose:</b> get the <b>best of both</b>. Run keyword (BM25) and vector search <b>in parallel</b>, then fuse the result lists. This is the production default today.</p>
+    <div class="chips"><span class="chip"><b>Combines:</b> <a href="#bm25">BM25</a> + <a href="#ann">vector search</a> (+ <a href="#sparse">sparse</a>)</span><span class="chip"><b>Fusion:</b> RRF · weighted score blend</span></div>
+  </div>
+  <div class="lanes">
+    <div class="lane idx"><h3><svg><use href="#i-db"/></svg>Index time: transform &amp; store</h3>
+      <ol class="flow">
+        <li><b>Analyze text</b><span>Into the inverted index (BM25).</span></li>
+        <li><b>Embed chunks</b><span>Into the vector index (HNSW).</span></li>
+        <li><b>Index metadata</b><span>Date, tenant, ACL and type as filterable fields.</span></li>
+      </ol>
+    </div>
+    <div class="lane qry"><h3><svg><use href="#i-search"/></svg>Query time: execute &amp; rank</h3>
+      <ol class="flow">
+        <li><b>Apply filters</b><span>Security and scope come first.</span></li>
+        <li><b>BM25 top-N</b><span>Exact terms, IDs and names.</span></li>
+        <li><b>kNN top-N</b><span>In parallel: paraphrases and meaning.</span></li>
+        <li><b>Fuse</b><span>RRF on ranks, or α·vec + (1−α)·bm25 on normalized scores.</span></li>
+        <li><b>Top-k → re-rank</b><span>Optionally pass to a cross-encoder (ch. 12).</span></li>
+      </ol>
+    </div>
+  </div>
+  <figure class="diagram">
+    <svg viewBox="0 0 900 250" role="img" aria-label="Hybrid search: BM25 and vector result lists fused with reciprocal rank fusion">
+      <rect class="d-box" x="10" y="100" width="110" height="46" rx="10"/><text class="t" x="65" y="121" text-anchor="middle">Query</text><text class="ts" x="65" y="136" text-anchor="middle">"error E42 on boot"</text>
+      <path class="d-arrow" d="M120 112C150 112 150 58 176 58"/><path class="d-arrow" d="M120 134C150 134 150 190 176 190"/>
+      <rect class="d-rank" x="180" y="30" width="150" height="56" rx="10"/><text class="t" x="255" y="54" text-anchor="middle">BM25</text><text class="ts" x="255" y="72" text-anchor="middle">nails "E42"</text>
+      <rect class="d-qry" x="180" y="162" width="150" height="56" rx="10"/><text class="t" x="255" y="186" text-anchor="middle">Vector kNN</text><text class="ts" x="255" y="204" text-anchor="middle">nails "won't start"</text>
+      <path class="d-arrow rank" d="M330 58H366"/><path class="d-arrow qry" d="M330 190H366"/>
+      <g>
+        <rect class="d-box" x="370" y="22" width="140" height="72" rx="10"/>
+        <text class="tm" x="384" y="44">1. A</text><text class="tm" x="384" y="62">2. B</text><text class="tm" x="384" y="80">3. D</text>
+        <rect class="d-box" x="370" y="154" width="140" height="72" rx="10"/>
+        <text class="tm" x="384" y="176">1. B</text><text class="tm" x="384" y="194">2. C</text><text class="tm" x="384" y="212">3. A</text>
+      </g>
+      <path class="d-arrow acc" d="M510 58C560 58 560 112 596 116"/><path class="d-arrow acc" d="M510 190C560 190 560 136 596 132"/>
+      <rect class="d-acc" x="600" y="90" width="120" height="66" rx="12"/><text class="t" x="660" y="116" text-anchor="middle">RRF</text><text class="tms" x="660" y="136" text-anchor="middle">Σ 1/(60+rank)</text>
+      <path class="d-arrow acc" d="M720 123H750"/>
+      <rect class="d-box" x="754" y="60" width="136" height="128" rx="10"/>
+      <text class="th f-acc" x="766" y="80">Fused</text>
+      <text class="tm" x="766" y="102">1. B .0325</text><text class="tm" x="766" y="122">2. A .0323</text><text class="tm" x="766" y="142">3. C .0161</text><text class="tm" x="766" y="162">4. D .0159</text>
+    </svg>
+    <figcaption><b>Reciprocal Rank Fusion</b> uses only ranks, so the two incompatible score scales never need calibrating. Docs found by both systems rise to the top.</figcaption>
+  </figure>
+  <ul class="facts" style="--c:var(--qry)">
+    <li><b>Complementary failure modes:</b> BM25 misses synonyms, and vectors miss exact codes. Together they cover both.</li>
+    <li><b>RRF (k = 60)</b> is robust and needs no tuning. Weighted blends can win, but only with normalized scores and a tuned α.</li>
+    <li><b>Filter before scoring</b> (tenant, permissions, date) so the top-k stays full and secure.</li>
+    <li><b>Native support:</b> Elasticsearch / OpenSearch, Vespa, Weaviate, Qdrant, Azure AI Search and pgvector + tsvector.</li>
+  </ul>
+</section>
+
+<!-- 12 Rerank -->
+<section class="chapter" id="rerank" style="--c:var(--qry)">
+  <div class="ch-head">
+    <div class="ch-num">12</div>
+    <h2>Re-ranking (two-stage retrieval)</h2>
+    <p class="purpose"><b>Purpose:</b> use a cheap model for <b>recall</b> and an expensive model for <b>precision</b>. A cross-encoder reads the query and each candidate <b>together</b> and re-orders the shortlist.</p>
+    <div class="chips"><span class="chip"><b>Builds on:</b> hybrid search</span><span class="chip"><b>Models:</b> cross-encoders (ms-marco, bge-reranker, Cohere Rerank) · LLM rerankers · Learning to Rank (LambdaMART)</span></div>
+  </div>
+  <div class="lanes">
+    <div class="lane idx"><h3><svg><use href="#i-db"/></svg>Index time: transform &amp; store</h3>
+      <ol class="flow">
+        <li><b>Keep full text</b><span>The re-ranker needs the raw passage, not just its vector.</span></li>
+        <li><b>(LTR) Log features</b><span>Store BM25, freshness, popularity and clicks, then train a ranking model.</span></li>
+      </ol>
+    </div>
+    <div class="lane rank"><h3><svg><use href="#i-rank"/></svg>Query time: execute &amp; rank</h3>
+      <ol class="flow">
+        <li><b>Retrieve ~100</b><span>From hybrid search: fast and high recall.</span></li>
+        <li><b>Pair up</b><span>[query ⟂ passage] for each candidate.</span></li>
+        <li><b>Cross-encode</b><span>The transformer outputs a relevance score per pair.</span></li>
+        <li><b>Re-sort, cut</b><span>Keep the top 5–20 for the user or LLM.</span></li>
+      </ol>
+    </div>
+  </div>
+  <div class="grid2">
+    <figure class="diagram small">
+      <svg viewBox="0 0 420 250" role="img" aria-label="Retrieval funnel from millions to a handful of results">
+        <path class="d-idx" d="M20 20H400L360 70H60Z"/><text class="t" x="210" y="44" text-anchor="middle">Corpus · 10M chunks</text><text class="ts" x="210" y="60" text-anchor="middle">index lookup, ~ms</text>
+        <path class="d-qry" d="M62 76H358L318 126H102Z"/><text class="t" x="210" y="100" text-anchor="middle">Retrieve · 100–1000</text><text class="ts" x="210" y="116" text-anchor="middle">BM25 + ANN, high recall</text>
+        <path class="d-rank" d="M104 132H316L276 182H144Z"/><text class="t" x="210" y="156" text-anchor="middle">Re-rank · 20</text><text class="ts" x="210" y="172" text-anchor="middle">cross-encoder, precise</text>
+        <path class="d-gen" d="M146 188H274L244 238H176Z"/><text class="t" x="210" y="212" text-anchor="middle">Top 5</text><text class="ts" x="210" y="228" text-anchor="middle">user / LLM</text>
+      </svg>
+      <figcaption>Each stage gets more expensive per doc and sees fewer docs.</figcaption>
+    </figure>
+    <figure class="diagram small">
+      <svg viewBox="0 0 420 250" role="img" aria-label="Bi-encoder versus cross-encoder">
+        <text class="th f-qry" x="20" y="22">Bi-encoder (retrieval)</text>
+        <rect class="d-box" x="20" y="34" width="70" height="30" rx="6"/><text class="tms" x="55" y="53" text-anchor="middle">query</text>
+        <rect class="d-box" x="20" y="74" width="70" height="30" rx="6"/><text class="tms" x="55" y="93" text-anchor="middle">doc</text>
+        <path class="d-arrow" d="M90 49H118"/><path class="d-arrow" d="M90 89H118"/>
+        <rect class="d-qry" x="122" y="34" width="70" height="30" rx="6"/><text class="tms" x="157" y="53" text-anchor="middle">enc</text>
+        <rect class="d-qry" x="122" y="74" width="70" height="30" rx="6"/><text class="tms" x="157" y="93" text-anchor="middle">enc</text>
+        <path class="d-arrow" d="M192 49C230 49 230 66 252 68"/><path class="d-arrow" d="M192 89C230 89 230 72 252 70"/>
+        <rect class="d-box" x="256" y="54" width="70" height="30" rx="6"/><text class="tms" x="291" y="73" text-anchor="middle">cosine</text>
+        <text class="ts" x="336" y="66">fast</text><text class="ts" x="336" y="80">precomputable</text>
+        <text class="th f-rank" x="20" y="146">Cross-encoder (re-rank)</text>
+        <rect class="d-box" x="20" y="160" width="110" height="40" rx="6"/><text class="tms" x="75" y="184" text-anchor="middle">query + doc</text>
+        <path class="d-arrow" d="M130 180H158"/>
+        <rect class="d-rank" x="162" y="160" width="80" height="40" rx="6"/><text class="tms" x="202" y="184" text-anchor="middle">encoder</text>
+        <path class="d-arrow" d="M242 180H270"/>
+        <rect class="d-box" x="274" y="160" width="52" height="40" rx="6"/><text class="tms" x="300" y="184" text-anchor="middle">0.93</text>
+        <text class="ts" x="336" y="176">precise</text><text class="ts" x="336" y="190">per query</text>
+        <text class="ts" x="20" y="232">Tokens of query and doc attend to each other, which captures nuance.</text>
+      </svg>
+      <figcaption>Bi-encoders can't see the query and doc together, and cross-encoders can.</figcaption>
+    </figure>
+  </div>
+  <ul class="facts" style="--c:var(--rank)">
+    <li><b>Often the single biggest quality win</b> in a RAG stack, for a few dozen milliseconds of extra latency.</li>
+    <li><b>Learning to Rank (LTR)</b> trains a model on many features (BM25, vector score, recency, clicks). It's classic in e-commerce and web search.</li>
+    <li class="warn"><b>Cost scales with candidates:</b> scoring 100 pairs per query requires a GPU. Cap the shortlist.</li>
+    <li class="warn"><b>A re-ranker can't fix recall:</b> if the right doc isn't in the shortlist, it can't be promoted.</li>
+  </ul>
+</section>
+
+<!-- =============================================================== -->
+<div class="part-title" style="--c:var(--gen)">Part IV · Generative retrieval</div>
+
+<!-- 13 RAG -->
+<section class="chapter" id="rag" style="--c:var(--gen)">
+  <div class="ch-head">
+    <div class="ch-num">13</div>
+    <h2>RAG: Retrieval-Augmented Generation</h2>
+    <p class="purpose"><b>Purpose:</b> give answers instead of links. <b>Retrieve</b> relevant passages, <b>augment</b> the LLM prompt with them, and let it <b>generate</b> a grounded answer with citations.</p>
+    <div class="chips"><span class="chip"><b>Builds on:</b> hybrid search + re-ranking</span><span class="chip"><b>Named:</b> Lewis et al., 2020</span><span class="chip"><b>Why:</b> LLMs don't know your private or fresh data, and they hallucinate</span></div>
+  </div>
+  <div class="lanes">
+    <div class="lane idx"><h3><svg><use href="#i-db"/></svg>Index time (ingestion pipeline)</h3>
+      <ol class="flow">
+        <li><b>Load</b><span>Connectors for Confluence, SharePoint, PDFs, DBs and tickets.</span></li>
+        <li><b>Parse &amp; clean</b><span>Layout, tables, OCR. Drop boilerplate.</span></li>
+        <li><b>Chunk</b><span>Semantic or heading-aware, plus overlap and title context.</span></li>
+        <li><b>Embed + analyze</b><span>Dense vectors <i>and</i> BM25 terms.</span></li>
+        <li><b>Store</b><span>Chunk text, vectors, metadata, ACLs and source URL.</span></li>
+      </ol>
+    </div>
+    <div class="lane qry"><h3><svg><use href="#i-search"/></svg>Query time: retrieve</h3>
+      <ol class="flow">
+        <li><b>Question in</b><span>Plus chat history and user identity.</span></li>
+        <li><b>Rewrite (opt.)</b><span>Make it standalone: "and its price?" → "price of Model X".</span></li>
+        <li><b>Hybrid retrieve</b><span>Top ~50 with permission filters applied.</span></li>
+        <li><b>Re-rank</b><span>Keep the best 5–10 chunks.</span></li>
+      </ol>
+    </div>
+    <div class="lane gen"><h3><svg><use href="#i-spark"/></svg>Query time: augment &amp; generate</h3>
+      <ol class="flow">
+        <li><b>Build prompt</b><span>Instructions + numbered chunks + question.</span></li>
+        <li><b>LLM generates</b><span>"Answer only from the sources. Cite [n]."</span></li>
+        <li><b>Post-process</b><span>Attach citation links and check grounding.</span></li>
+        <li><b>Answer out</b><span>Stream it to the user, with sources.</span></li>
+      </ol>
+    </div>
+  </div>
+  <figure class="diagram">
+    <svg viewBox="0 0 900 260" role="img" aria-label="RAG architecture: ingestion pipeline and query pipeline">
+      <text class="th f-idx" x="10" y="20">Ingest</text>
+      <rect class="d-box" x="10" y="32" width="100" height="44" rx="8"/><text class="t2" x="60" y="59" text-anchor="middle">Sources</text>
+      <rect class="d-idx" x="140" y="32" width="100" height="44" rx="8"/><text class="t2" x="190" y="59" text-anchor="middle">Parse</text>
+      <rect class="d-idx" x="270" y="32" width="100" height="44" rx="8"/><text class="t2" x="320" y="59" text-anchor="middle">Chunk</text>
+      <rect class="d-idx" x="400" y="32" width="100" height="44" rx="8"/><text class="t2" x="450" y="59" text-anchor="middle">Embed</text>
+      <path class="d-arrow idx" d="M110 54H136"/><path class="d-arrow idx" d="M240 54H266"/><path class="d-arrow idx" d="M370 54H396"/>
+      <rect class="d-acc" x="540" y="22" width="150" height="64" rx="12"/><text class="t" x="615" y="48" text-anchor="middle">Index</text><text class="ts" x="615" y="66" text-anchor="middle">vectors + BM25 + metadata</text>
+      <path class="d-arrow idx" d="M500 54H536"/>
+      <text class="th f-qry" x="10" y="132">Ask</text>
+      <rect class="d-box" x="10" y="144" width="100" height="44" rx="8"/><text class="t2" x="60" y="171" text-anchor="middle">Question</text>
+      <rect class="d-qry" x="140" y="144" width="100" height="44" rx="8"/><text class="t2" x="190" y="171" text-anchor="middle">Rewrite</text>
+      <rect class="d-qry" x="270" y="144" width="100" height="44" rx="8"/><text class="t2" x="320" y="171" text-anchor="middle">Retrieve</text>
+      <rect class="d-rank" x="400" y="144" width="100" height="44" rx="8"/><text class="t2" x="450" y="171" text-anchor="middle">Re-rank</text>
+      <path class="d-arrow qry" d="M110 166H136"/><path class="d-arrow qry" d="M240 166H266"/><path class="d-arrow rank" d="M370 166H396"/>
+      <path class="d-arrow acc dash" d="M590 86C590 120 330 110 322 140"/><text class="ts f-acc" x="598" y="112">top-k chunks</text>
+      <rect class="d-gen" x="540" y="134" width="150" height="64" rx="12"/><text class="t" x="615" y="158" text-anchor="middle">Prompt</text><text class="ts" x="615" y="176" text-anchor="middle">rules + [1]…[5] + question</text>
+      <path class="d-arrow gen" d="M500 166H536"/>
+      <rect class="d-gen" x="720" y="134" width="70" height="64" rx="12"/><text class="t" x="755" y="171" text-anchor="middle">LLM</text>
+      <path class="d-arrow gen" d="M690 166H716"/>
+      <path class="d-arrow gen" d="M790 166H812"/>
+      <rect class="d-box" x="814" y="124" width="80" height="84" rx="10"/><text class="t" x="854" y="152" text-anchor="middle">Answer</text><text class="ts" x="854" y="170" text-anchor="middle">grounded</text><text class="ts" x="854" y="186" text-anchor="middle">+ citations</text>
+      <text class="ts" x="10" y="240">The LLM reads <tspan class="f-gen">only what retrieval gives it</tspan>. Bad retrieval means a bad answer.</text>
+    </svg>
+  </figure>
+  <ul class="facts" style="--c:var(--gen)">
+    <li><b>The "R" decides quality.</b> Most RAG failures are retrieval failures: the right chunk was never fetched.</li>
+    <li><b>Grounding reduces hallucination</b> and makes answers auditable through citations. It doesn't eliminate hallucination.</li>
+    <li><b>Fresh and private data without retraining:</b> update the index and the answers change immediately.</li>
+    <li><b>Enforce permissions at retrieval time.</b> The LLM must never see chunks the user can't access.</li>
+    <li class="warn"><b>Context window budget:</b> more chunks isn't always better. Irrelevant context distracts the model ("lost in the middle").</li>
+    <li class="warn"><b>Classic RAG struggles</b> with corpus-wide questions ("main themes?") and multi-hop questions. See <a href="#graphrag">GraphRAG</a>.</li>
+  </ul>
+</section>
+
+<!-- 14 Advanced RAG -->
+<section class="chapter" id="advanced-rag" style="--c:var(--gen)">
+  <div class="ch-head">
+    <div class="ch-num">14</div>
+    <h2>Advanced RAG patterns</h2>
+    <p class="purpose"><b>Purpose:</b> fix the weak spots of basic RAG by improving the <b>query</b>, the <b>chunks</b>, or by letting the LLM <b>retrieve in a loop</b>.</p>
+    <div class="chips"><span class="chip"><b>Builds on:</b> RAG</span><span class="chip"><b>Mix and match:</b> these are composable building blocks</span></div>
+  </div>
+  <div class="metrics">
+    <div class="metric"><div class="q">Query side</div><h4>Query rewriting</h4><p>The LLM turns a chatty follow-up into a standalone, keyword-rich search query.</p></div>
+    <div class="metric"><div class="q">Query side</div><h4>Multi-query + fusion</h4><p>Generate 3–5 phrasings, retrieve each, merge with <a href="#hybrid">RRF</a>. Recall goes up.</p></div>
+    <div class="metric"><div class="q">Query side</div><h4>HyDE</h4><p>The LLM writes a <i>hypothetical answer</i>, which you embed and search with. Answers resemble answers more than questions do.</p></div>
+    <div class="metric"><div class="q">Query side</div><h4>Routing &amp; self-query</h4><p>Pick the right index or tool, and extract filters such as <code>year=2024</code> from natural language.</p></div>
+    <div class="metric"><div class="q">Index side</div><h4>Small-to-big (parent/child)</h4><p>Match on small precise chunks, but send the larger parent section to the LLM.</p></div>
+    <div class="metric"><div class="q">Index side</div><h4>Contextual chunks</h4><p>Prepend a short LLM-written summary of the doc and section to each chunk before embedding and BM25 indexing.</p></div>
+    <div class="metric"><div class="q">After retrieval</div><h4>Compression</h4><p>Trim retrieved chunks to the relevant sentences. You fit more evidence and lose less in the middle.</p></div>
+    <div class="metric"><div class="q">Loop</div><h4>Agentic / iterative RAG</h4><p>The LLM calls search as a <b>tool</b>, reads, decides whether it knows enough, and searches again. This handles multi-hop questions.</p></div>
+    <div class="metric"><div class="q">Loop</div><h4>Self-check / corrective</h4><p>Grade the retrieved docs and the answer for relevance and support. Re-retrieve or say "I don't know".</p></div>
+  </div>
+  <div class="lanes">
+    <div class="lane gen"><h3><svg><use href="#i-spark"/></svg>Agentic retrieval loop</h3>
+      <ol class="flow">
+        <li><b>Plan</b><span>Break the question into sub-questions.</span></li>
+        <li><b>Search tool</b><span>Hybrid, SQL, web, or graph.</span></li>
+        <li><b>Read &amp; note</b><span>Keep the evidence and drop the noise.</span></li>
+        <li><b>Enough?</b><span>No → refine the query and loop. Yes → continue.</span></li>
+        <li><b>Answer</b><span>Synthesize it, with citations.</span></li>
+      </ol>
+    </div>
+  </div>
+  <ul class="facts" style="--c:var(--gen)">
+    <li><b>Start simple:</b> hybrid + re-rank + good chunking beats most clever tricks. Add patterns only when your evals show a gap.</li>
+    <li class="warn"><b>Every LLM call in the loop adds latency and cost.</b> Agentic RAG trades speed for depth.</li>
+  </ul>
+</section>
+
+<!-- 15 GraphRAG -->
+<section class="chapter" id="graphrag" style="--c:var(--graph)">
+  <div class="ch-head">
+    <div class="ch-num">15</div>
+    <h2>GraphRAG</h2>
+    <p class="purpose"><b>Purpose:</b> answer questions about <b>relationships</b> and the <b>whole corpus</b>. An LLM builds a <b>knowledge graph</b> of entities and relations, groups it into <b>communities</b> and pre-summarizes them, and the query then runs over the graph and its summaries.</p>
+    <div class="chips"><span class="chip"><b>Builds on:</b> RAG + knowledge graphs + community detection</span><span class="chip"><b>Popularized:</b> Microsoft Research, 2024</span><span class="chip"><b>Variants:</b> local · global · DRIFT · LazyGraphRAG · LightRAG · Neo4j GraphRAG</span></div>
+  </div>
+  <div class="lanes">
+    <div class="lane graph"><h3><svg><use href="#i-graph"/></svg>Index time: build the knowledge graph</h3>
+      <ol class="flow">
+        <li><b>Chunk</b><span>Split into "text units", as in RAG.</span></li>
+        <li><b>LLM extraction</b><span>Entities (name, type, description) + relationships + claims.</span></li>
+        <li><b>Merge</b><span>Deduplicate entities across chunks into one graph.</span></li>
+        <li><b>Communities</b><span><b>Leiden</b> clustering, hierarchical from coarse to fine.</span></li>
+        <li><b>Summarize</b><span>The LLM writes a <b>report per community</b> at every level.</span></li>
+        <li><b>Store</b><span>Graph + entity embeddings + reports + chunks.</span></li>
+      </ol>
+    </div>
+    <div class="lane qry"><h3><svg><use href="#i-search"/></svg>Query time: local search ("Who/what is X related to?")</h3>
+      <ol class="flow">
+        <li><b>Embed question</b><span>Match it to the most relevant <b>entities</b>.</span></li>
+        <li><b>Expand neighborhood</b><span>Follow relations 1–2 hops out.</span></li>
+        <li><b>Collect context</b><span>Entities, relations, their source chunks and community reports.</span></li>
+        <li><b>Rank &amp; fit</b><span>Prioritize the context to fit the token budget.</span></li>
+        <li><b>LLM answers</b><span>With multi-hop evidence.</span></li>
+      </ol>
+    </div>
+    <div class="lane gen"><h3><svg><use href="#i-spark"/></svg>Query time: global search ("What are the main themes?")</h3>
+      <ol class="flow">
+        <li><b>Pick a level</b><span>Coarse community reports for broad questions.</span></li>
+        <li><b>Map</b><span>The LLM answers the question over each report in parallel, with a helpfulness score.</span></li>
+        <li><b>Filter</b><span>Drop low-score partial answers.</span></li>
+        <li><b>Reduce</b><span>The LLM merges the top partial answers into one.</span></li>
+      </ol>
+    </div>
+  </div>
+  <figure class="diagram">
+    <svg viewBox="0 0 900 332" role="img" aria-label="Knowledge graph with entities clustered into communities, each with a summary report">
+      <!-- communities -->
+      <ellipse class="c-graph" cx="170" cy="150" rx="140" ry="110"/>
+      <ellipse class="c-qry" cx="420" cy="110" rx="115" ry="85"/>
+      <ellipse class="c-rank" cx="420" cy="250" rx="120" ry="58"/>
+      <text class="th f-graph" x="80" y="56">C1 · Supply chain</text>
+      <text class="th f-qry" x="360" y="36">C2 · Product safety</text>
+      <text class="th f-rank" x="372" y="326">C3 · Leadership</text>
+      <!-- edges -->
+      <g class="d-line thin">
+        <path d="M110 110L210 90M110 110L130 190M210 90L240 170M130 190L240 170M240 170L200 230"/>
+        <path d="M240 170L370 120"/>
+        <path d="M370 120L460 80M370 120L430 160M460 80L500 130M430 160L500 130"/>
+        <path d="M430 160L400 240M400 240L480 260M400 240L330 260"/>
+      </g>
+      <!-- relation labels -->
+      <text class="tms" x="300" y="166">supplies</text>
+      <text class="tms" x="440" y="206">approved</text>
+      <!-- nodes -->
+      <g>
+        <circle class="dot graph" cx="110" cy="110" r="9"/><text class="t2" x="96" y="96" text-anchor="middle">Supplier X</text>
+        <circle class="dot graph" cx="210" cy="90" r="9"/><text class="t2" x="222" y="78" text-anchor="middle">Port Y</text>
+        <circle class="dot graph" cx="130" cy="190" r="9"/><text class="t2" x="118" y="214" text-anchor="middle">Plant A</text>
+        <circle class="dot graph" cx="240" cy="170" r="11"/><text class="t2" x="200" y="160" text-anchor="end">Battery cell</text>
+        <circle class="dot graph" cx="200" cy="230" r="8"/><text class="t2" x="206" y="252" text-anchor="middle">Lithium</text>
+        <circle class="dot qry" cx="370" cy="120" r="11"/><text class="t2" x="354" y="102" text-anchor="middle">Product P</text>
+        <circle class="dot qry" cx="460" cy="80" r="8"/><text class="t2" x="476" y="68" text-anchor="middle">Recall 2023</text>
+        <circle class="dot qry" cx="430" cy="160" r="8"/><text class="t2" x="456" y="176">Regulator</text>
+        <circle class="dot qry" cx="500" cy="130" r="8"/><text class="t2" x="514" y="134">Overheating</text>
+        <circle class="dot rank" cx="400" cy="240" r="9"/><text class="t2" x="388" y="228" text-anchor="end">CEO</text>
+        <circle class="dot rank" cx="480" cy="260" r="8"/><text class="t2" x="494" y="264">Board</text>
+        <circle class="dot rank" cx="330" cy="260" r="8"/><text class="t2" x="318" y="284" text-anchor="middle">CFO</text>
+      </g>
+      <!-- reports -->
+      <path class="d-arrow dash" d="M560 110H608"/>
+      <rect class="d-graph" x="612" y="20" width="278" height="80" rx="10"/>
+      <text class="t f-graph" x="626" y="42">C1 report</text>
+      <text class="ts" x="626" y="60">Battery cells depend on a single lithium</text>
+      <text class="ts" x="626" y="76">supplier (X) shipping through Port Y.</text>
+      <text class="ts" x="626" y="92">Risk: single point of failure.</text>
+      <rect class="d-qry" x="612" y="112" width="278" height="80" rx="10"/>
+      <text class="t f-qry" x="626" y="134">C2 report</text>
+      <text class="ts" x="626" y="152">Product P was recalled in 2023 over</text>
+      <text class="ts" x="626" y="168">overheating cells; the regulator</text>
+      <text class="ts" x="626" y="184">approved the fix.</text>
+      <rect class="d-rank" x="612" y="204" width="278" height="80" rx="10"/>
+      <text class="t f-rank" x="626" y="226">C3 report</text>
+      <text class="ts" x="626" y="244">The CEO and board approved the recall;</text>
+      <text class="ts" x="626" y="260">the CFO owns the supplier contracts.</text>
+      <text class="ts" x="626" y="306">Pre-computed at index time by the LLM</text>
+    </svg>
+    <figcaption>Multi-hop question: "Which supplier issue led to the Product P recall?" The path is <b>Supplier X → Battery cell → Product P → Recall</b>. Vector RAG would need all of those facts to sit in one chunk.</figcaption>
+  </figure>
+  <ul class="facts" style="--c:var(--graph)">
+    <li><b>Wins at "sensemaking"</b> questions about themes, trends and summaries across thousands of docs, where no single chunk holds the answer.</li>
+    <li><b>Wins at multi-hop</b> questions that connect facts spread across documents, through explicit relations.</li>
+    <li><b>Explainable:</b> the answer can show the entity path and community it came from.</li>
+    <li><b>Combines with vectors:</b> entities and reports are embedded too. Local search is effectively vector search plus graph expansion.</li>
+    <li class="warn"><b>Expensive indexing:</b> the corpus is passed through an LLM several times. Costs can be 10–100× those of vector RAG. LazyGraphRAG defers that work to query time.</li>
+    <li class="warn"><b>Extraction quality and updates:</b> LLM extraction errors propagate, and incremental updates mean re-clustering and re-summarizing.</li>
+  </ul>
+</section>
+
+<!-- 16 Evaluation -->
+<section class="chapter" id="evaluation" style="--c:var(--gen)">
+  <div class="ch-head">
+    <div class="ch-num">16</div>
+    <h2>Evaluating search</h2>
+    <p class="purpose"><b>Purpose:</b> stop guessing. Build a <b>golden set</b> of queries with known relevant docs, measure, change one thing, and measure again.</p>
+    <div class="chips"><span class="chip"><b>Applies to:</b> every chapter above</span><span class="chip"><b>Tools:</b> trec_eval · ranx · Ragas · TruLens · LLM-as-judge</span></div>
+  </div>
+  <div class="example">
+    <h4>Worked example: one query, top 5 results, 4 relevant docs exist in total</h4>
+    <div class="steps">
+      <div class="row"><span>Ranked results</span><div class="toks"><span class="tok x">1 ✗</span><span class="tok idx">2 ✓</span><span class="tok x">3 ✗</span><span class="tok idx">4 ✓</span><span class="tok idx">5 ✓</span></div></div>
+      <div class="row"><span>Scores</span><div class="toks"><span class="tok rank">P@5 = 3/5 = 0.60</span><span class="tok rank">R@5 = 3/4 = 0.75</span><span class="tok rank">RR = 1/2 = 0.50</span><span class="tok rank">Hit@5 = 1</span></div></div>
+    </div>
+  </div>
+  <div class="metrics">
+    <div class="metric"><div class="q">Retrieval</div><h4>Precision@k</h4><p>The share of the top k that is relevant. <code>hits / k</code></p></div>
+    <div class="metric"><div class="q">Retrieval</div><h4>Recall@k</h4><p>The share of all relevant docs found in the top k. Most important for RAG.</p></div>
+    <div class="metric"><div class="q">Retrieval</div><h4>MRR</h4><p>Mean Reciprocal Rank: <code>1 / rank of first hit</code>, averaged over queries.</p></div>
+    <div class="metric"><div class="q">Retrieval</div><h4>nDCG@k</h4><p>Graded relevance with a log discount for position, normalized to 0–1. The standard metric for ranking.</p></div>
+    <div class="metric"><div class="q">RAG</div><h4>Faithfulness</h4><p>Is every claim in the answer supported by the retrieved context? This measures hallucination.</p></div>
+    <div class="metric"><div class="q">RAG</div><h4>Answer / context relevance</h4><p>Does the answer address the question? Did the retrieved context actually contain what was needed?</p></div>
+    <div class="metric"><div class="q">Online</div><h4>Behavior signals</h4><p>CTR, zero-result rate, query reformulations, abandonment, thumbs up/down.</p></div>
+    <div class="metric"><div class="q">Ops</div><h4>Latency &amp; cost</h4><p>p50/p95 latency per stage, index size, and LLM tokens per answer.</p></div>
+    <div class="metric"><div class="q">ANN</div><h4>Recall vs exact</h4><p>The overlap of ANN top-k with brute-force top-k. Use it to tune <code>ef</code> / <code>nprobe</code>.</p></div>
+  </div>
+  <ul class="facts" style="--c:var(--gen)">
+    <li><b>Evaluate retrieval separately from generation.</b> Otherwise you can't tell which half failed.</li>
+    <li><b>50–200 real queries</b> with labeled answers beat any public benchmark for your domain.</li>
+  </ul>
+</section>
+
+<!-- 17 Cheat sheet -->
+<section class="chapter" id="cheatsheet" style="--c:var(--accent)">
+  <div class="ch-head">
+    <div class="ch-num">17</div>
+    <h2>Cheat sheet &amp; glossary</h2>
+    <p class="purpose"><b>Purpose:</b> everything on one screen. Pick a technique by what it matches on and what it costs.</p>
+  </div>
+
+  <div class="example">
+    <h4>Which one do I need?</h4>
+    <div class="steps">
+      <div class="row"><span>Codes, IDs, logs</span><div class="toks"><span class="tok idx">Exact / regex</span><span class="tok idx">BM25 keyword field</span></div></div>
+      <div class="row"><span>Typos, names</span><div class="toks"><span class="tok idx">Fuzzy</span><span class="tok idx">n-grams</span><span class="tok idx">phonetic</span></div></div>
+      <div class="row"><span>Docs search box</span><div class="toks"><span class="tok rank">Lexical + BM25</span><span class="tok qry">→ add vectors = Hybrid</span></div></div>
+      <div class="row"><span>"Means the same"</span><div class="toks"><span class="tok qry">Embeddings + ANN</span><span class="tok qry">Hybrid</span></div></div>
+      <div class="row"><span>Best top-10 quality</span><div class="toks"><span class="tok rank">+ Cross-encoder re-rank</span></div></div>
+      <div class="row"><span>Answers, not links</span><div class="toks"><span class="tok gen">RAG</span><span class="tok gen">agentic RAG for multi-step</span></div></div>
+      <div class="row"><span>Relations, themes</span><div class="toks"><span class="tok" style="color:var(--graph)">GraphRAG (local / global)</span></div></div>
+    </div>
+  </div>
+
+  <div class="table-wrap">
+    <table class="cmp">
+      <thead><tr><th>Technique</th><th>Matches on</th><th>Stored as</th><th>Ranked by</th><th>Great at</th><th>Weak at</th><th>Typical tools</th></tr></thead>
+      <tbody>
+        <tr><td>Exact / regex</td><td>Literal chars</td><td>Raw text</td><td><small>none</small></td><td>Codes, logs</td><td>Scale, variants</td><td>grep, ripgrep, SQL LIKE</td></tr>
+        <tr><td>Boolean</td><td>Terms, logic</td><td>Inverted index</td><td><small>none (set)</small></td><td>Filters, legal search</td><td>Ordering results</td><td>Lucene, any FTS</td></tr>
+        <tr><td>Lexical + BM25</td><td>Normalized words</td><td>Inverted index + stats</td><td>BM25</td><td>Keywords, rare terms</td><td>Synonyms, meaning</td><td>Elasticsearch, OpenSearch, Solr, Postgres FTS</td></tr>
+        <tr><td>Phrase / proximity</td><td>Word order</td><td>Positional index</td><td>BM25 + proximity</td><td>Names, quotes</td><td>Index size</td><td>Lucene family</td></tr>
+        <tr><td>Fuzzy</td><td>Near-spellings</td><td>FST / n-grams / phonetic</td><td>BM25 − edit penalty</td><td>Typos, names</td><td>Short words, meaning</td><td>ES fuzzy, pg_trgm</td></tr>
+        <tr><td>Similarity (kNN)</td><td>Feature vectors</td><td>Matrix / LSH buckets</td><td>Distance</td><td>"More like this", dedup</td><td>Scale (brute force)</td><td>scikit-learn, MinHash</td></tr>
+        <tr><td>Dense vector</td><td>Meaning</td><td>Embeddings + HNSW/IVF</td><td>Cosine / dot</td><td>Paraphrase, multilingual</td><td>Exact tokens, negation</td><td>FAISS, pgvector, Qdrant, Milvus, Weaviate</td></tr>
+        <tr><td>Learned sparse</td><td>Weighted + expanded terms</td><td>Inverted index</td><td>Dot product</td><td>Interpretable semantics</td><td>Ingest cost</td><td>SPLADE, ELSER</td></tr>
+        <tr><td>Hybrid</td><td>Words + meaning</td><td>Both indexes</td><td>RRF / blend</td><td>Robust default</td><td>Two systems to run</td><td>ES/OS, Vespa, Azure AI Search</td></tr>
+        <tr><td>Re-rank</td><td>Query ⟂ doc jointly</td><td>Raw text</td><td>Cross-encoder / LTR</td><td>Top-k precision</td><td>Latency, can't fix recall</td><td>bge-reranker, Cohere Rerank</td></tr>
+        <tr><td>RAG</td><td>Retrieved context</td><td>Hybrid index</td><td>Retriever + LLM</td><td>Grounded answers</td><td>Corpus-wide questions</td><td>LangChain, LlamaIndex, Semantic Kernel</td></tr>
+        <tr><td>GraphRAG</td><td>Entities &amp; relations</td><td>Knowledge graph + reports</td><td>Graph context + LLM</td><td>Multi-hop, themes</td><td>Indexing cost</td><td>MS GraphRAG, Neo4j, LightRAG</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <h3 style="font-size:18px;margin:26px 0 10px">Glossary</h3>
+  <input class="gl-filter" id="glFilter" type="search" placeholder="Filter terms…" aria-label="Filter glossary">
+  <dl class="glossary" id="glossary">
+    <div><dt>ANN</dt><dd>Approximate Nearest Neighbor. Trades a little recall for huge speed on vector search.</dd></div>
+    <div><dt>Analyzer</dt><dd>Tokenizer plus filters that turn text into index terms. It must be the same at index time and query time.</dd></div>
+    <div><dt>avgdl</dt><dd>Average document length in the corpus, used by BM25 for length normalization.</dd></div>
+    <div><dt>Bi-encoder</dt><dd>Encodes query and doc separately into vectors. Fast, and doc vectors can be precomputed.</dd></div>
+    <div><dt>BM25</dt><dd>Best Matching 25, the probabilistic ranking function: IDF × saturating TF with length normalization.</dd></div>
+    <div><dt>Boolean query</dt><dd>AND / OR / NOT over sets of matching docs. No ranking.</dd></div>
+    <div><dt>Chunking</dt><dd>Splitting docs into passages for embedding and retrieval. A key quality lever in RAG.</dd></div>
+    <div><dt>Community (GraphRAG)</dt><dd>A cluster of densely connected entities, found with Leiden and summarized by an LLM.</dd></div>
+    <div><dt>Cosine similarity</dt><dd>The cosine of the angle between two vectors. 1 = same direction, 0 = unrelated.</dd></div>
+    <div><dt>Cross-encoder</dt><dd>A model that reads query and doc together and outputs a relevance score. Used for re-ranking.</dd></div>
+    <div><dt>Dense vector</dt><dd>A fixed-length vector of floats, with all dimensions non-zero, such as an embedding.</dd></div>
+    <div><dt>df / IDF</dt><dd>Document frequency: how many docs contain the term. Inverse document frequency weights rare terms up.</dd></div>
+    <div><dt>Edit distance</dt><dd>The minimum number of insertions, deletions and substitutions to turn one string into another (Levenshtein).</dd></div>
+    <div><dt>Embedding</dt><dd>A learned vector representation where geometric closeness means semantic similarity.</dd></div>
+    <div><dt>Entity extraction</dt><dd>Identifying people, orgs, products, etc. in text. In GraphRAG an LLM does it.</dd></div>
+    <div><dt>FST</dt><dd>Finite-state transducer. Lucene's compact term dictionary, which supports fast prefix and fuzzy walks.</dd></div>
+    <div><dt>Faithfulness</dt><dd>Whether the generated answer is fully supported by the retrieved context.</dd></div>
+    <div><dt>Golden set</dt><dd>Labeled queries with known relevant docs, used for offline evaluation.</dd></div>
+    <div><dt>Grounding</dt><dd>Constraining an LLM to answer from provided sources, usually with citations.</dd></div>
+    <div><dt>Hallucination</dt><dd>A fluent but unsupported or false LLM output.</dd></div>
+    <div><dt>HNSW</dt><dd>Hierarchical Navigable Small World. A layered proximity graph and the most popular ANN index.</dd></div>
+    <div><dt>Hybrid search</dt><dd>Lexical and vector retrieval run together, with their results fused.</dd></div>
+    <div><dt>HyDE</dt><dd>Hypothetical Document Embeddings: search using the embedding of an LLM-drafted answer.</dd></div>
+    <div><dt>Inverted index</dt><dd>A map from term to the postings list of docs containing it. The backbone of keyword search.</dd></div>
+    <div><dt>IVF</dt><dd>Inverted File index for vectors. Clusters the space and searches only the nearest clusters.</dd></div>
+    <div><dt>k1, b</dt><dd>BM25 parameters: term-frequency saturation (≈1.2) and length normalization (≈0.75).</dd></div>
+    <div><dt>Knowledge graph</dt><dd>Nodes (entities) and typed edges (relationships), often with descriptions and sources.</dd></div>
+    <div><dt>kNN</dt><dd>k-nearest neighbors. Return the k closest vectors to the query.</dd></div>
+    <div><dt>Leiden</dt><dd>A community-detection algorithm that finds well-connected clusters in graphs hierarchically.</dd></div>
+    <div><dt>Lemmatization</dt><dd>Reducing a word to its dictionary base form using vocabulary and grammar (better → good).</dd></div>
+    <div><dt>LSH / MinHash</dt><dd>Hashing so that similar items collide. MinHash estimates Jaccard similarity between sets.</dd></div>
+    <div><dt>LTR</dt><dd>Learning to Rank: a model trained on many features and labels to order results.</dd></div>
+    <div><dt>MRR</dt><dd>Mean Reciprocal Rank. The average of 1 / (rank of first relevant result).</dd></div>
+    <div><dt>n-gram</dt><dd>A sequence of n characters or words. Enables partial, substring and typo-tolerant matching.</dd></div>
+    <div><dt>nDCG</dt><dd>Normalized Discounted Cumulative Gain. Graded relevance that rewards putting good results early.</dd></div>
+    <div><dt>Postings list</dt><dd>The sorted list of doc IDs (plus tf and positions) for one term.</dd></div>
+    <div><dt>PQ</dt><dd>Product Quantization. Compresses vectors into short codes for memory-efficient ANN.</dd></div>
+    <div><dt>Precision / Recall</dt><dd>Share of results that are relevant / share of relevant docs that were found.</dd></div>
+    <div><dt>Query expansion</dt><dd>Adding synonyms, related terms or rewrites to a query to raise recall.</dd></div>
+    <div><dt>RAG</dt><dd>Retrieval-Augmented Generation: retrieve context, put it in the prompt, generate a grounded answer.</dd></div>
+    <div><dt>Re-ranking</dt><dd>A second, more precise scoring pass over a shortlist of candidates.</dd></div>
+    <div><dt>RRF</dt><dd>Reciprocal Rank Fusion: Σ 1/(k + rank) across result lists, with k usually 60.</dd></div>
+    <div><dt>Semantic search</dt><dd>Search by meaning rather than exact words, usually implemented with embeddings.</dd></div>
+    <div><dt>Shingles</dt><dd>Overlapping word n-grams indexed as single terms, used for phrases and near-duplicate detection.</dd></div>
+    <div><dt>Sparse vector</dt><dd>A vocabulary-sized vector that is mostly zeros: BM25 or SPLADE term weights.</dd></div>
+    <div><dt>SPLADE</dt><dd>Learned sparse retrieval. A transformer outputs expanded, weighted terms for an inverted index.</dd></div>
+    <div><dt>Stemming</dt><dd>Rule-based suffix stripping to a crude root (running → run).</dd></div>
+    <div><dt>Stop words</dt><dd>Very common words (the, a, of) that are often dropped at analysis time.</dd></div>
+    <div><dt>tf</dt><dd>Term frequency: how many times a term occurs in a document.</dd></div>
+    <div><dt>Token</dt><dd>A unit of text after tokenization. For LLMs, a subword piece that counts toward the context window.</dd></div>
+    <div><dt>Top-k</dt><dd>The k best-scoring results returned to the caller.</dd></div>
+    <div><dt>Vector database</dt><dd>A store optimized for embeddings and ANN queries, plus metadata filtering.</dd></div>
+    <div><dt>WAND / Block-Max WAND</dt><dd>Query-time pruning that skips docs that cannot enter the top-k, which makes BM25 fast.</dd></div>
+  </dl>
+</section>
+
+<footer>
+  <p>Search, Visually: a developer quick guide. A static page with no tracking. Print-friendly (Ctrl+P).</p>
+  <p><a href="#top">Back to top ↑</a></p>
+</footer>
+
+</main>
+
+<a class="iconbtn totop" id="totop" href="#top" aria-label="Back to top"><svg><use href="#i-up"/></svg></a>
+<script src="assets/app.js"></script>
+</body>
+</html>
